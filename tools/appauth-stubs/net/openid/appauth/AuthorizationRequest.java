@@ -20,4 +20,5 @@ public class AuthorizationRequest {
     }
     public Uri getRedirectUri() { return null; }
     public String getState() { return null; }
+    public java.net.URI toUri() { return null; }
 }

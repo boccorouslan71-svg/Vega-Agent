@@ -11,10 +11,11 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Minimal HTTP loopback callback server for MCP OAuth 2.0 PKCE flows.
@@ -29,9 +30,8 @@ class McpLoopbackCallbackServer(
     private val onResult: (code: String?, state: String?, error: String?) -> Unit
 ) {
     private var serverSocket: ServerSocket? = null
-    private var thread: Thread? = null
-    private val latch = CountDownLatch(1)
     private val aborted = AtomicBoolean(false)
+    private val latch = CountDownLatch(1)
 
     companion object {
         const val LOOPBACK_PORT = 2083
@@ -40,20 +40,18 @@ class McpLoopbackCallbackServer(
         private const val TAG = "McpLoopback"
     }
 
+    /** Start listening on localhost. Must call [stop] when done. */
     fun start() {
-        thread = Thread({
+        Thread({
             try {
                 serverSocket = ServerSocket(LOOPBACK_PORT, 1, InetAddress.getByName("127.0.0.1"))
                 Log.d(TAG, "Loopback listening on $LOOPBACK_URL")
                 val conn = serverSocket?.accept() ?: return@Thread
                 try {
-                    if (aborted.get()) {
-                        sendHtml(conn, 499, "Canceled")
-                        return@Thread
-                    }
+                    if (aborted.get()) return@Thread
                     conn.inputStream.use { inp ->
                         BufferedReader(InputStreamReader(inp)).use { reader ->
-                            val requestLine = reader.readLine() ?: return@Thread
+                            val requestLine = reader.readLine() ?: return@use
                             Log.d(TAG, "Request: $requestLine")
                             val parts = requestLine.split(" ")
                             val fullPath = if (parts.size >= 2) parts[1] else ""
@@ -62,7 +60,8 @@ class McpLoopbackCallbackServer(
                             val query = if (qPos >= 0) fullPath.substring(qPos + 1) else ""
                             if (path != CALLBACK_PATH) {
                                 sendHtml(conn, 400, "Bad path")
-                                return@Thread
+                                onResult(null, null, "Unknown callback path")
+                                return@use
                             }
                             val params = parseQuery(query)
                             val code = params["code"]
@@ -70,21 +69,21 @@ class McpLoopbackCallbackServer(
                             val error = params["error"]
                             if (expectedState != null && state != expectedState) {
                                 sendHtml(conn, 400, "State mismatch")
-                                onResult(null, state, "State mismatch")
-                                return@Thread
+                                onResult(null, null, "State mismatch")
+                                return@use
                             }
                             if (error != null) {
                                 val desc = params["error_description"] ?: ""
-                                sendHtml(conn, 400, "Auth error: $error")
+                                sendHtml(conn, 400, "Auth error")
                                 onResult(null, null, "$error: $desc")
-                                return@Thread
+                                return@use
                             }
                             if (code.isNullOrEmpty()) {
                                 sendHtml(conn, 400, "No code")
-                                onResult(null, state, "No authorization code")
-                                return@Thread
+                                onResult(null, null, "No authorization code")
+                                return@use
                             }
-                            Log.d(TAG, "Got code+state, returning success page")
+                            Log.d(TAG, "Got code, sending success page")
                             sendHtml(conn, 200, buildConnectedPage())
                             onResult(code, state, null)
                         }
@@ -93,25 +92,18 @@ class McpLoopbackCallbackServer(
                     try { conn.close() } catch (_: Exception) {}
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Loopback server error: ${e.message}")
+                Log.e(TAG, "Loopback error: ${e.message}")
                 onResult(null, null, "Server error: ${e.message}")
             } finally {
                 latch.countDown()
                 stop()
             }
-        }, "mcp-loopback").apply {
-            isDaemon = true
-            start()
-        }
+        }, "mcp-loopback").apply { isDaemon = true; start() }
     }
 
     fun await(): Boolean {
-        try {
-            return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            return false
-        }
+        try { return latch.await(timeoutMs, TimeUnit.MILLISECONDS) }
+        catch (_: InterruptedException) { Thread.currentThread().interrupt(); return false }
     }
 
     fun stop() {
@@ -119,7 +111,6 @@ class McpLoopbackCallbackServer(
         latch.countDown()
         try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
-        thread = null
     }
 
     private fun sendHtml(conn: Socket, status: Int, bodyText: String) {
@@ -157,9 +148,9 @@ class McpLoopbackCallbackServer(
     }
 
     private fun buildConnectedPage(): String {
-        return """<!DOCTYPE html><html><head><title>${Fa.MCP_OAUTH_LOOPBACK_CONNECTED}</title></head>
-<body><h1>${Fa.MCP_OAUTH_LOOPBACK_CONNECTED}</h1>
-<p>You may close this window now.</p>
+        return """<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>${Fa.MCP_OAUTH_LOOPBACK_CONNECTED}</title></head>
+<body style="font-family:system-ui;padding:32px"><h1>${Fa.MCP_OAUTH_LOOPBACK_CONNECTED}</h1>
+<p>You can close this page and return to Vega.</p>
 <script>window.setTimeout(function(){window.close();}, 1000);</script>
 </body></html>"""
     }

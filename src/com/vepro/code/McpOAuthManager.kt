@@ -27,14 +27,10 @@ import java.util.Base64
  * Manages OAuth 2.0 with PKCE for MCP server authentication.
  *
  * Generic auto-discovery per the MCP Authorization spec (RFC 9728 + RFC 8414
- * + RFC 7591):
- *   1. Unauthenticated `initialize` probe → read `resource_metadata` from the
- *      401 `WWW-Authenticate` challenge (never guessed).
- *   2. GET the protected-resource metadata → `authorization_servers` (array).
- *   3. GET the authorization-server metadata → endpoints (RFC 8414 document,
- *      falling back to OpenID Connect discovery when it is not served).
- *   4. POST to `registration_endpoint` → dynamic client registration (RFC 7591).
- *   5. Launch the AppAuth PKCE flow with the discovered endpoints + client id.
+ * + RFC 7591). For the authorization flow, uses the loopback approach from
+ * the MCP spec: a local TCP server on 127.0.0.1:2083 receives the callback,
+ * while the browser is opened directly (not via AppAuth's performAuthorizationRequest
+ * which expects a deep-link return).
  */
 class McpOAuthManager(private val context: Context) {
 
@@ -80,8 +76,7 @@ class McpOAuthManager(private val context: Context) {
     }
 
     /**
-     * Step 2: discover the authorization endpoints from the authorization
-     * server URL.
+     * Step 2: discover the authorization endpoints from the authorization server URL.
      */
     fun discoverAuthorizationServer(authServerUrl: String): DiscoveryResult? {
         for (candidate in authorizationServerMetadataCandidates(authServerUrl)) {
@@ -221,7 +216,6 @@ class McpOAuthManager(private val context: Context) {
         // Generate PKCE
         val codeVerifier = generateCodeVerifier()
         val state = generateState()
-
         val serviceConfig = AuthorizationServiceConfiguration(
             Uri.parse(oauth.authorizationEndpoint),
             Uri.parse(oauth.tokenEndpoint)
@@ -254,6 +248,14 @@ class McpOAuthManager(private val context: Context) {
         }
     }
 
+    /**
+     * Loopback flow — mirrors mobile-agent's approach exactly:
+     * 1. Start TCP server on 127.0.0.1:2083 in background
+     * 2. Open the authorize URL directly in a Custom Tab (NOT via
+     *    performAuthorizationRequest, because that would expect a deep-link return)
+     * 3. Wait for the callback on the loopback server
+     * 4. Exchange the received code for tokens
+     */
     private fun startLoopbackFlow(
         activity: Activity,
         server: McpServer,
@@ -263,13 +265,20 @@ class McpOAuthManager(private val context: Context) {
     ) {
         activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_LOOPBACK_START) }
 
+        val authorizationUrl = buildAuthorizationUrl(
+            oauth.authorizationEndpoint, oauth.clientId,
+            oauth.redirectUri, oauth.scopes, codeVerifier, state,
+            oauth.resourceUrl.ifEmpty { null }
+        )
+
         loopbackServer = McpLoopbackCallbackServer(
             expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, ""),
             onResult = { code, state, error ->
                 loopbackServer = null
                 if (error != null) {
                     activity.runOnUiThread {
-                        if (error.contains("Canceled", ignoreCase = true)) {
+                        if (error.contains("Canceled", ignoreCase = true) ||
+                            error.contains("cancelled", ignoreCase = true)) {
                             callback.onCancel()
                         } else {
                             callback.onError(error)
@@ -284,14 +293,12 @@ class McpOAuthManager(private val context: Context) {
         )
         loopbackServer?.start()
 
-        val completionIntent = Intent(context, SettingsActivity::class.java)
-        completionIntent.action = Intent.ACTION_VIEW
-        completionIntent.data = Uri.parse(McpLoopbackCallbackServer.LOOPBACK_URL)
-        val pendingIntent = android.app.PendingIntent.getActivity(
-            context, PENDING_INTENT_REQUEST_CODE, completionIntent,
-            android.app.PendingIntent.FLAG_ONE_SHOT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-        authService.performAuthorizationRequest(authRequest, pendingIntent)
+        // Open browser directly — do NOT use performAuthorizationRequest.
+        // That method launches AppAuth's management activity which waits for
+        // a deep-link return that never arrives with a loopback redirect.
+        val customTabsIntent = authService.createCustomTabsIntentBuilder().build()
+        customTabsIntent.intent.data = Uri.parse(authorizationUrl)
+        activity.startActivity(customTabsIntent.intent)
     }
 
     private fun startDeepLinkFlow(
@@ -310,6 +317,9 @@ class McpOAuthManager(private val context: Context) {
         authService.performAuthorizationRequest(authRequest, pendingIntent)
     }
 
+    /**
+     * Exchange the authorization code for tokens via AppAuth's performTokenRequest.
+     */
     private fun exchangeCodeForToken(
         activity: Activity,
         server: McpServer,
@@ -331,7 +341,28 @@ class McpOAuthManager(private val context: Context) {
         if (oauth.resourceUrl.isNotEmpty()) {
             builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
         }
-        performTokenRequest(builder.build(), server, callback)
+
+        authService.performTokenRequest(builder.build(),
+            AuthorizationService.TokenResponseCallback { response, ex ->
+                if (response != null) {
+                    val accessToken = response.accessToken ?: ""
+                    val refreshToken = response.refreshToken ?: ""
+                    val encryptedAccess = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
+                    val encryptedRefresh = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
+                    server.oauth.encryptedAccessToken = encryptedAccess
+                    server.oauth.encryptedRefreshToken = encryptedRefresh
+                    server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
+                    server.oauth.resourceUrl = builder.build().additionalParameters?.get("resource") ?: server.oauth.resourceUrl
+                    activity.runOnUiThread { callback.onSuccess(accessToken, refreshToken, response.idToken) }
+                } else {
+                    val msg = ex?.message ?: "Token exchange failed"
+                    if (msg.contains("429", ignoreCase = true) || msg.contains("rate limit", ignoreCase = true)) {
+                        activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format("30")) }
+                    } else {
+                        activity.runOnUiThread { callback.onError(msg) }
+                    }
+                }
+            })
     }
 
     fun handleAuthorizationResponse(
@@ -341,14 +372,26 @@ class McpOAuthManager(private val context: Context) {
     ) {
         val authResponse = AuthorizationResponse.fromIntent(intent)
         val authException = AuthorizationException.fromIntent(intent)
-
         if (authResponse == null || authException != null) {
             callback.onError(authException?.error ?: Fa.MCP_AUTH_FAILED)
             return
         }
-
         val tokenRequest = authResponse.createTokenExchangeRequest()
-        performTokenRequest(tokenRequest, server, callback)
+        authService.performTokenRequest(tokenRequest,
+            AuthorizationService.TokenResponseCallback { response, ex ->
+                if (response != null) {
+                    val accessToken = response.accessToken ?: ""
+                    val refreshToken = response.refreshToken ?: ""
+                    val encryptedAccess = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
+                    val encryptedRefresh = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
+                    server.oauth.encryptedAccessToken = encryptedAccess
+                    server.oauth.encryptedRefreshToken = encryptedRefresh
+                    server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
+                    callback.onSuccess(accessToken, refreshToken, response.idToken)
+                } else {
+                    callback.onError(ex?.message ?: "Token exchange failed")
+                }
+            })
     }
 
     fun refreshToken(server: McpServer, callback: OAuthCallback) {
@@ -357,11 +400,8 @@ class McpOAuthManager(private val context: Context) {
             callback.onError("No refresh token available")
             return
         }
-        val refreshToken = try {
-            SecureStore.decrypt(oauth.encryptedRefreshToken)
-        } catch (_: Exception) {
-            callback.onError("Failed to decrypt refresh token")
-            return
+        val refreshToken = try { SecureStore.decrypt(oauth.encryptedRefreshToken) } catch (_: Exception) {
+            callback.onError("Failed to decrypt refresh token"); return
         }
         if (refreshToken.isEmpty()) {
             callback.onError("Refresh token is empty")
@@ -378,56 +418,19 @@ class McpOAuthManager(private val context: Context) {
         if (oauth.resourceUrl.isNotEmpty()) {
             builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
         }
-        performTokenRequest(builder.build(), server, callback, refreshToken)
-    }
-
-    private fun performTokenRequest(
-        tokenRequest: TokenRequest,
-        server: McpServer,
-        callback: OAuthCallback,
-        fallbackRefreshToken: String = ""
-    ) {
-        val tokenResponseCallback = AuthorizationService.TokenResponseCallback { response, ex ->
-            if (response != null) {
-                val accessToken = response.accessToken ?: ""
-                val refreshToken = response.refreshToken ?: fallbackRefreshToken
-
-                val encryptedAccess = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
-                val encryptedRefresh = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
-
-                server.oauth.encryptedAccessToken = encryptedAccess
-                server.oauth.encryptedRefreshToken = encryptedRefresh
-                server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
-                server.oauth.resourceUrl = tokenRequest.additionalParameters?.get("resource") ?: server.oauth.resourceUrl
-
-                callback.onSuccess(accessToken, refreshToken, response.idToken)
-            } else {
-                val msg = ex?.message ?: "Token exchange failed"
-                if (msg.contains("429", ignoreCase = true) || msg.contains("rate limit", ignoreCase = true)) {
-                    callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format("30"))
+        authService.performTokenRequest(builder.build(),
+            AuthorizationService.TokenResponseCallback { response, ex ->
+                if (response != null) {
+                    val newAccess = response.accessToken ?: ""
+                    val newRefresh = response.refreshToken ?: refreshToken
+                    server.oauth.encryptedAccessToken = if (newAccess.isNotEmpty()) SecureStore.encrypt(newAccess) else ""
+                    server.oauth.encryptedRefreshToken = if (newRefresh.isNotEmpty()) SecureStore.encrypt(newRefresh) else ""
+                    server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
+                    callback.onSuccess(newAccess, newRefresh, response.idToken)
                 } else {
-                    callback.onError(msg)
+                    callback.onError(ex?.message ?: "Token refresh failed")
                 }
-            }
-        }
-
-        val clientAuth = clientAuthenticationFor(server.oauth)
-        if (clientAuth != null) {
-            authService.performTokenRequest(tokenRequest, clientAuth, tokenResponseCallback)
-        } else {
-            authService.performTokenRequest(tokenRequest, tokenResponseCallback)
-        }
-    }
-
-    private fun clientAuthenticationFor(oauth: OAuthConfig): ClientAuthentication? {
-        if (oauth.encryptedClientSecret.isEmpty()) return null
-        val secret = try { SecureStore.decrypt(oauth.encryptedClientSecret) } catch (_: Exception) { "" }
-        if (secret.isEmpty()) return null
-        return when (oauth.tokenEndpointAuthMethod) {
-            "client_secret_post" -> ClientSecretPost(secret)
-            "client_secret_basic" -> ClientSecretBasic(secret)
-            else -> null
-        }
+            })
     }
 
     fun getAccessToken(server: McpServer): String? {
@@ -611,10 +614,45 @@ class McpOAuthManager(private val context: Context) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
+    private fun codeChallengeFor(verifier: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8))
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+    }
+
     private fun generateState(): String {
         val bytes = ByteArray(16)
         SecureRandom().nextBytes(bytes)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /**
+     * Build the OAuth 2.0 authorization URL manually (same as AppAuth does
+     * internally) so we can open it directly in a Custom Tab without going
+     * through performAuthorizationRequest — required for loopback callbacks.
+     */
+    private fun buildAuthorizationUrl(
+        authorizationEndpoint: String,
+        clientId: String,
+        redirectUri: String,
+        scopes: List<String>,
+        codeVerifier: String,
+        state: String,
+        resource: String?
+    ): String {
+        val builder = java.net.URI.Builder()
+            .scheme("https")
+            .encodedPath(authorizationEndpoint)
+            .appendQueryParameter("response_type", "code")
+            .appendQueryParameter("client_id", clientId)
+            .appendQueryParameter("redirect_uri", redirectUri)
+            .appendQueryParameter("scope", scopes.joinToString(" "))
+            .appendQueryParameter("code_challenge", codeChallengeFor(codeVerifier))
+            .appendQueryParameter("code_challenge_method", "S256")
+            .appendQueryParameter("state", state)
+        if (!resource.isNullOrBlankJava()) {
+            builder.appendQueryParameter("resource", resource)
+        }
+        return builder.build().toString()
     }
 
     // =====================================================================
