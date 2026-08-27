@@ -337,7 +337,7 @@ class McpManager(private val context: Context) {
         oauthManager.dispose()
 
         if (refreshError != null) {
-            throw McpException(refreshError!!)
+            throw McpException(refreshError ?: "OAuth token refresh failed")
         }
     }
 

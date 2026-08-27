@@ -8,7 +8,7 @@ import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
-import net.openid.appauth.AuthorizationServiceConfig
+import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.TokenRequest
 import org.json.JSONObject
 
@@ -52,7 +52,7 @@ class McpOAuthManager(private val context: Context) {
         val oauth = server.oauth
 
         // Build service configuration from endpoints
-        val serviceConfig = AuthorizationServiceConfig.Builder()
+        val serviceConfig = AuthorizationServiceConfiguration.Builder()
             .setAuthorizationEndpoint(
                 android.net.Uri.parse(oauth.authorizationEndpoint)
             )
@@ -65,7 +65,7 @@ class McpOAuthManager(private val context: Context) {
         val authRequestBuilder = AuthorizationRequest.Builder(
             serviceConfig,
             oauth.clientId,
-            AuthorizationRequest.RESPONSE_TYPE_CODE,
+            "code",
             android.net.Uri.parse(oauth.redirectUri)
         )
             .setScopes(*oauth.scopes.toTypedArray())
@@ -76,12 +76,19 @@ class McpOAuthManager(private val context: Context) {
 
         val authRequest = authRequestBuilder.build()
 
-        // Launch authorization via Custom Tabs
-        authService.performAuthorizationRequest(
-            authRequest,
-            activity,
-            PENDING_INTENT_REQUEST_CODE
+        // Build a PendingIntent so the browser returns to our activity
+        val completionIntent = android.content.Intent(context, SettingsActivity::class.java)
+        completionIntent.action = android.content.Intent.ACTION_VIEW
+        completionIntent.data = android.net.Uri.parse(oauth.redirectUri)
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            PENDING_INTENT_REQUEST_CODE,
+            completionIntent,
+            android.app.PendingIntent.FLAG_ONE_SHOT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
+
+        // Launch authorization via Custom Tabs
+        authService.performAuthorizationRequest(authRequest, pendingIntent)
     }
 
     /**
@@ -167,7 +174,7 @@ class McpOAuthManager(private val context: Context) {
             return
         }
 
-        val serviceConfig = AuthorizationServiceConfig.Builder()
+        val serviceConfig = AuthorizationServiceConfiguration.Builder()
             .setTokenEndpoint(
                 android.net.Uri.parse(oauth.tokenEndpoint)
             )
@@ -177,7 +184,7 @@ class McpOAuthManager(private val context: Context) {
             serviceConfig,
             oauth.clientId
         )
-            .setGrantType(TokenRequest.GRANT_TYPE_REFRESH_TOKEN)
+            .setGrantType("refresh_token")
             .setRefreshToken(refreshToken)
             .setScopes(*oauth.scopes.toTypedArray())
             .build()
