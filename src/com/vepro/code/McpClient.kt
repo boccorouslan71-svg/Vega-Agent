@@ -132,16 +132,16 @@ class McpClient(
      * last JSON object. If it's plain JSON, return as-is.
      */
     private fun extractJsonFromResponse(raw: String): String {
-        val trimmed = raw.trim()
+        val trimmed = raw.trimJava()
         // Plain JSON response
         if (trimmed.startsWith("{")) return trimmed
 
         // SSE response: find the last "data: {...}" line
         var lastData: String? = null
         for (line in trimmed.lines()) {
-            val l = line.trim()
+            val l = line.trimJava()
             if (l.startsWith("data: ")) {
-                lastData = l.removePrefix("data: ").trim()
+                lastData = l.removePrefix("data: ").trimJava()
             }
         }
         return lastData ?: throw McpException("No JSON payload in response")

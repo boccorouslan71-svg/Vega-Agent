@@ -352,15 +352,18 @@ class SettingsActivity : Activity() {
         // --- MCP servers ----------------------------------------------------
         panel.addView(Ui.sectionLabel(this, Fa.MCP_TITLE))
         val mcpGroup = card()
-        val mcpRow = Ui.settingsRow(this)
-        val mcpIcon = Ui.glyph(this, "\u2699", Ui.GlyphSize.MID) // ⚙
+        val mcpRow = Ui.row(this)
+        val mcpIconSize = Theme.dp(this, 20.0f)
+        val mcpIcon = ImageView(this)
+        mcpIcon.setImageDrawable(Icons.of("settings", Theme.TEXT_MUTED, Ui.STROKE))
+        mcpIcon.scaleType = ImageView.ScaleType.FIT_CENTER
+        mcpIcon.layoutParams = LinearLayout.LayoutParams(mcpIconSize, mcpIconSize)
         mcpRow.addView(mcpIcon)
-        val mcpLabel = Ui.Type.label(this, Fa.MCP_TITLE)
+        val mcpLabel = Ui.text(this, Fa.MCP_TITLE, Ui.Type.LABEL, Theme.TEXT, Theme.uiSemi())
         mcpLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         mcpLabel.gravity = Gravity.CENTER_VERTICAL
         mcpRow.addView(mcpLabel)
-        val mcpChevron = Ui.Type.label(this, Lang.chevronForward())
-        mcpChevron.setTextColor(Theme.TEXT_FAINT)
+        val mcpChevron = Ui.text(this, Lang.chevronForward(), Ui.Type.LABEL, Theme.TEXT_FAINT, Theme.uiSemi())
         mcpRow.addView(mcpChevron)
         mcpRow.isClickable = true
         mcpRow.setOnClickListener { openMcpServers() }
@@ -1997,12 +2000,16 @@ class SettingsActivity : Activity() {
                 serversContainer.addView(empty)
             } else {
                 for (server in servers) {
-                    val row = Ui.settingsRow(this)
+                    val row = Ui.row(this)
                     row.setPadding(
                         Theme.dp(this, 16f), Theme.dp(this, 12f),
                         Theme.dp(this, 16f), Theme.dp(this, 12f)
                     )
-                    val icon = Ui.glyph(this, "\u26a1", Ui.GlyphSize.MID)
+                    val iconSize = Theme.dp(this, 20.0f)
+                    val icon = ImageView(this)
+                    icon.setImageDrawable(Icons.of("zap", Theme.TEXT_MUTED, Ui.STROKE))
+                    icon.scaleType = ImageView.ScaleType.FIT_CENTER
+                    icon.layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
                     row.addView(icon)
                     val info = LinearLayout(this)
                     info.orientation = LinearLayout.VERTICAL
@@ -2021,7 +2028,11 @@ class SettingsActivity : Activity() {
                     info.addView(status)
                     row.addView(info)
                     // Kebab menu for edit/toggle/delete
-                    val kebab = Ui.glyph(this, "\u22ee", Ui.GlyphSize.SMALL)
+                    val kebab = TextView(this)
+                    kebab.text = "\u22ee"
+                    kebab.typeface = Theme.ui()
+                    kebab.textSize = Ui.Type.LABEL
+                    kebab.setTextColor(Theme.TEXT_MUTED)
                     kebab.setOnClickListener { showMcpServerKebab(sheet, mcpManager, server) { refreshServerList() } }
                     row.addView(kebab)
                     row.isClickable = true
@@ -2056,10 +2067,14 @@ class SettingsActivity : Activity() {
 
         // Toggle enable/disable
         val toggleText = if (server.enabled) Fa.MCP_TOGGLE_DISABLE else Fa.MCP_TOGGLE_ENABLE
-        val toggleRow = Ui.settingsRow(this)
+        val toggleRow = Ui.row(this)
         toggleRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
-        toggleRow.addView(Ui.glyph(this, "\u26a1", Ui.GlyphSize.MID))
-        val toggleLabel = Ui.Type.label(this, toggleText)
+        val toggleIcon = ImageView(this)
+        toggleIcon.setImageDrawable(Icons.of("zap", Theme.TEXT_MUTED, Ui.STROKE))
+        toggleIcon.scaleType = ImageView.ScaleType.FIT_CENTER
+        toggleIcon.layoutParams = LinearLayout.LayoutParams(Theme.dp(this, 20.0f), Theme.dp(this, 20.0f))
+        toggleRow.addView(toggleIcon)
+        val toggleLabel = Ui.text(this, toggleText, Ui.Type.LABEL, Theme.TEXT, Theme.uiSemi())
         toggleLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         toggleRow.addView(toggleLabel)
         toggleRow.isClickable = true
@@ -2072,10 +2087,14 @@ class SettingsActivity : Activity() {
         sheet.body.addView(toggleRow)
 
         // Edit
-        val editRow = Ui.settingsRow(this)
+        val editRow = Ui.row(this)
         editRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
-        editRow.addView(Ui.glyph(this, "\u270e", Ui.GlyphSize.MID))
-        val editLabel = Ui.Type.label(this, Fa.MCP_EDIT)
+        val editIcon = ImageView(this)
+        editIcon.setImageDrawable(Icons.of("edit", Theme.TEXT_MUTED, Ui.STROKE))
+        editIcon.scaleType = ImageView.ScaleType.FIT_CENTER
+        editIcon.layoutParams = LinearLayout.LayoutParams(Theme.dp(this, 20.0f), Theme.dp(this, 20.0f))
+        editRow.addView(editIcon)
+        val editLabel = Ui.text(this, Fa.MCP_EDIT, Ui.Type.LABEL, Theme.TEXT, Theme.uiSemi())
         editLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         editRow.addView(editLabel)
         editRow.isClickable = true
@@ -2086,10 +2105,14 @@ class SettingsActivity : Activity() {
         sheet.body.addView(editRow)
 
         // Delete
-        val deleteRow = Ui.settingsRow(this)
+        val deleteRow = Ui.row(this)
         deleteRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
-        deleteRow.addView(Ui.glyph(this, "\u2716", Ui.GlyphSize.MID))
-        val deleteLabel = Ui.Type.label(this, Fa.MCP_REMOVE)
+        val deleteIcon = ImageView(this)
+        deleteIcon.setImageDrawable(Icons.of("trash", Theme.TEXT_MUTED, Ui.STROKE))
+        deleteIcon.scaleType = ImageView.ScaleType.FIT_CENTER
+        deleteIcon.layoutParams = LinearLayout.LayoutParams(Theme.dp(this, 20.0f), Theme.dp(this, 20.0f))
+        deleteRow.addView(deleteIcon)
+        val deleteLabel = Ui.text(this, Fa.MCP_REMOVE, Ui.Type.LABEL, Theme.TEXT, Theme.uiSemi())
         deleteLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         deleteRow.addView(deleteLabel)
         deleteRow.isClickable = true
@@ -2252,11 +2275,6 @@ class SettingsActivity : Activity() {
             val pill = segmentCell(authOptions[i])
             authTrack.addView(pill)
             authPills.add(pill)
-            pill.setOnClickListener {
-                selectedAuth = authValues[i]
-                paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
-                updateAuthFields()
-            }
         }
         paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
         sheet.body.addView(authTrack)
@@ -2298,6 +2316,14 @@ class SettingsActivity : Activity() {
             oauthScopes.visibility = oauthVisible
         }
         updateAuthFields()
+        for (pill in authPills) {
+            pill.setOnClickListener {
+                val idx = authPills.indexOf(pill)
+                selectedAuth = authValues[idx]
+                paintSegment(authPills) { i -> authValues[i] == selectedAuth }
+                updateAuthFields()
+            }
+        }
 
         val saveBtn = Ui.pillButton(this, Fa.MCP_SAVE, null, Ui.PRIMARY) {
             server.label = labelInput.text.toString().trim()
@@ -2964,7 +2990,7 @@ class SettingsActivity : Activity() {
         super.onNewIntent(intent)
         intent?.data?.let { uri ->
             if (uri.scheme == "vegaagent" && uri.host == "oauth2callback") {
-                val serverId = prefs.str(McpOAuthManager.MCP_OAUTH_SERVER_ID_KEY)
+                val serverId = prefs.str(McpOAuthManager.MCP_OAUTH_SERVER_ID_KEY, "")
                 if (serverId.isNotEmpty()) {
                     val mcpManager = McpManager(this)
                     val servers = mcpManager.loadServers()
@@ -2975,7 +3001,7 @@ class SettingsActivity : Activity() {
                             object : McpOAuthManager.OAuthCallback {
                                 override fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?) {
                                     mcpManager.saveServers()
-                                    runOnUiThread { say(Fa.MCP_OAUTH_AUTHORIZE) }
+                                    runOnUiThread { say(Fa.MCP_OAUTH_AUTHORIZE, true) }
                                 }
                                 override fun onError(error: String) {
                                     runOnUiThread { say(error, true) }
