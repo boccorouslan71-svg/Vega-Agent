@@ -590,7 +590,7 @@ class Tools(context: Context) {
                         try {
                             val result = mcpManager.callTool(name, a)
                             val formatted = mcpManager.formatToolResult(result)
-                            formatted.optString("output", result.toString(2))
+                            formatted.optString("output", result.toString())
                         } catch (e: McpException) {
                             "ERROR: MCP tool '$name' failed: ${e.message}"
                         } catch (e: Exception) {

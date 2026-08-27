@@ -180,7 +180,12 @@ c('android.os.Environment', [
 ])
 
 # ---------------------------------------------------------------- android.net
-c('android.net.Uri', ['public static android.net.Uri parse(String uriString)'])
+c('android.net.Uri', [
+    'public static android.net.Uri parse(String uriString)',
+    'public String getScheme()',
+    'public String getHost()',
+    'public String getPath()',
+])
 
 # ---------------------------------------------------------------- android.graphics
 c('android.graphics.Rect', [
@@ -480,6 +485,7 @@ c('android.content.Intent', [
     'public long getLongExtra(String name, long defaultValue)',
     'public android.content.ClipData getClipData()',
     'public android.net.Uri getData()',
+    'public android.content.Intent setData(android.net.Uri data)',
     'public static android.content.Intent createChooser(android.content.Intent target, CharSequence title)',
 ])
 c('android.content.Context', [
@@ -1082,6 +1088,8 @@ c('android.app.Activity', [
     'public android.view.View getCurrentFocus()',
     'public void startActivityForResult(android.content.Intent intent, int requestCode)',
     'public void requestPermissions(String[] permissions, int requestCode)',
+    'public void runOnUiThread(Runnable action)',
+    'protected void onNewIntent(android.content.Intent intent)',
     'public static final int RESULT_OK = -1',
     'public static final int RESULT_CANCELED = 0',
 ], extends='android.content.Context')
