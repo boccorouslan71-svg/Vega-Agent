@@ -10,6 +10,7 @@ public class AuthorizationResponse {
     public long accessTokenExpirationTime;
     public String refreshToken;
     public Map<String, String> additionalParameters;
+    public AuthorizationResponse(AuthorizationRequest authRequest) { this.authRequest = authRequest; }
     public static AuthorizationResponse fromIntent(Intent intent) { return null; }
     public TokenRequest createTokenExchangeRequest() { throw new UnsupportedOperationException(); }
     public static class Builder {

@@ -264,7 +264,7 @@ class McpOAuthManager(private val context: Context) {
         activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_LOOPBACK_START) }
 
         loopbackServer = McpLoopbackCallbackServer(
-            expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, null),
+            expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, ""),
             onResult = { code, state, error ->
                 loopbackServer = null
                 if (error != null) {
@@ -403,9 +403,8 @@ class McpOAuthManager(private val context: Context) {
                 callback.onSuccess(accessToken, refreshToken, response.idToken)
             } else {
                 val msg = ex?.message ?: "Token exchange failed"
-                if (ex?.type == AuthorizationException.TYPE_HTTP_ERROR && ex.responseCode == 429) {
-                    val retryAfter = ex.responseHeaders?.get("Retry-After")?.firstOrNull()?.toLongOrNull() ?: 30L
-                    callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format(retryAfter))
+                if (msg.contains("429", ignoreCase = true) || msg.contains("rate limit", ignoreCase = true)) {
+                    callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format("30"))
                 } else {
                     callback.onError(msg)
                 }
