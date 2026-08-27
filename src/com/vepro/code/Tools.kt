@@ -386,6 +386,17 @@ class Tools(context: Context) {
     }
 
     /**
+     * Reload server configs from prefs and reconnect.
+     * Called after OAuth succeeds so the agent sees the new tools
+     * without needing a full app restart.
+     */
+    fun reloadMcpServers() {
+        mcpManager.loadServers()
+        mcpManager.disconnectAll()
+        mcpManager.connectAll()
+    }
+
+    /**
      * Disconnect all MCP servers. Called on agent shutdown.
      */
     fun disconnectMcpServers() {

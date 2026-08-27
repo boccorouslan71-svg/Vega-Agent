@@ -2182,6 +2182,13 @@ class SettingsActivity : Activity() {
             object : McpOAuthManager.OAuthCallback {
                 override fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?) {
                     manager.saveServers()
+                    Thread {
+                        try {
+                            manager.connectAll()
+                            Tools(this@SettingsActivity).reloadMcpServers()
+                        } catch (_: Exception) {}
+                        runOnUiThread { say(Fa.MCP_AUTHORIZED, true) }
+                    }.start()
                 }
                 override fun onError(error: String) {
                     runOnUiThread { say(error, true) }
@@ -3003,7 +3010,10 @@ class SettingsActivity : Activity() {
                                 override fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?) {
                                     mcpManager.saveServers()
                                     Thread {
-                                        try { mcpManager.connectAll() } catch (_: Exception) {}
+                                        try {
+                                            mcpManager.connectAll()
+                                            Tools(this@SettingsActivity).reloadMcpServers()
+                                        } catch (_: Exception) {}
                                         runOnUiThread { say(Fa.MCP_AUTHORIZED, true) }
                                     }.start()
                                 }
