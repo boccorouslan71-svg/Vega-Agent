@@ -349,6 +349,37 @@ class SettingsActivity : Activity() {
         )
         panel.addView(tools)
 
+        // --- MCP servers ----------------------------------------------------
+        panel.addView(Ui.sectionLabel(this, Fa.MCP_TITLE))
+        val mcpGroup = card()
+        val mcpRow = Ui.settingsRow(this)
+        val mcpIcon = Ui.glyph(this, "\u2699", Ui.GlyphSize.MID) // ⚙
+        mcpRow.addView(mcpIcon)
+        val mcpLabel = Ui.Type.label(this, Fa.MCP_TITLE)
+        mcpLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        mcpLabel.gravity = Gravity.CENTER_VERTICAL
+        mcpRow.addView(mcpLabel)
+        val mcpChevron = Ui.Type.label(this, Lang.chevronForward())
+        mcpChevron.setTextColor(Theme.TEXT_FAINT)
+        mcpRow.addView(mcpChevron)
+        mcpRow.isClickable = true
+        mcpRow.setOnClickListener { openMcpServers() }
+        mcpGroup.addView(mcpRow)
+        // Show connected server count
+        val mcpCount = TextView(this)
+        mcpCount.typeface = Theme.ui()
+        mcpCount.textSize = Ui.Type.BODY
+        mcpCount.setTextColor(Theme.TEXT_FAINT)
+        val mcpServers = try {
+            val mgr = McpManager(this)
+            mgr.loadServers()
+            mgr.getAllServers()
+        } catch (_: Exception) { emptyList() }
+        mcpCount.text = if (mcpServers.isEmpty()) Fa.MCP_NO_SERVERS
+            else mcpServers.size.toString() + " " + Fa.MCP_TITLE.lowercase()
+        mcpGroup.addView(mcpCount)
+        panel.addView(mcpGroup)
+
         // --- custom prompt -------------------------------------------------
         panel.addView(Ui.sectionLabel(this, Fa.SET_CUSTOM))
         val custom = card()
@@ -1940,6 +1971,428 @@ class SettingsActivity : Activity() {
     }
 
     // =====================================================================
+    // MCP Servers
+    // =====================================================================
+
+    private fun openMcpServers() {
+        val sheet = Sheet(this)
+        sheet.header("\u2699", Fa.MCP_TITLE, null)
+
+        val mcpManager = McpManager(this)
+        mcpManager.loadServers()
+
+        val serversContainer = LinearLayout(this)
+        serversContainer.orientation = LinearLayout.VERTICAL
+
+        fun refreshServerList() {
+            serversContainer.removeAllViews()
+            val servers = mcpManager.getAllServers()
+            if (servers.isEmpty()) {
+                val empty = TextView(this)
+                empty.typeface = Theme.ui()
+                empty.text = Fa.MCP_NO_SERVERS
+                empty.setTextColor(Theme.TEXT_FAINT)
+                empty.textSize = Ui.Type.BODY
+                empty.setPadding(0, Theme.dp(this, 24f), 0, Theme.dp(this, 24f))
+                serversContainer.addView(empty)
+            } else {
+                for (server in servers) {
+                    val row = Ui.settingsRow(this)
+                    row.setPadding(
+                        Theme.dp(this, 16f), Theme.dp(this, 12f),
+                        Theme.dp(this, 16f), Theme.dp(this, 12f)
+                    )
+                    val icon = Ui.glyph(this, "\u26a1", Ui.GlyphSize.MID)
+                    row.addView(icon)
+                    val info = LinearLayout(this)
+                    info.orientation = LinearLayout.VERTICAL
+                    info.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    val name = TextView(this)
+                    name.typeface = Theme.ui()
+                    name.text = server.label
+                    name.setTextColor(Theme.TEXT)
+                    name.textSize = Ui.Type.LABEL
+                    info.addView(name)
+                    val status = TextView(this)
+                    status.typeface = Theme.ui()
+                    status.text = server.statusText
+                    status.setTextColor(Theme.TEXT_FAINT)
+                    status.textSize = Ui.Type.MICRO
+                    info.addView(status)
+                    row.addView(info)
+                    // Kebab menu for edit/toggle/delete
+                    val kebab = Ui.glyph(this, "\u22ee", Ui.GlyphSize.SMALL)
+                    kebab.setOnClickListener { showMcpServerKebab(sheet, mcpManager, server) { refreshServerList() } }
+                    row.addView(kebab)
+                    row.isClickable = true
+                    row.setOnClickListener { showMcpServerKebab(sheet, mcpManager, server) { refreshServerList() } }
+                    serversContainer.addView(row)
+                }
+            }
+        }
+
+        refreshServerList()
+        sheet.body.addView(serversContainer)
+
+        // Add server button
+        val addBtn = Ui.pillButton(this, Fa.MCP_ADD, null, Ui.PRIMARY) {
+            showMcpAddSheet(sheet, mcpManager) { refreshServerList() }
+        }
+        sheet.body.addView(addBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        sheet.show()
+    }
+
+    private fun showMcpServerKebab(
+        parentSheet: Sheet,
+        manager: McpManager,
+        server: McpServer,
+        onRefresh: () -> Unit
+    ) {
+        val sheet = Sheet(this)
+        sheet.header("\u22ee", server.label, null)
+
+        // Toggle enable/disable
+        val toggleText = if (server.enabled) Fa.MCP_TOGGLE_DISABLE else Fa.MCP_TOGGLE_ENABLE
+        val toggleRow = Ui.settingsRow(this)
+        toggleRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
+        toggleRow.addView(Ui.glyph(this, "\u26a1", Ui.GlyphSize.MID))
+        val toggleLabel = Ui.Type.label(this, toggleText)
+        toggleLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        toggleRow.addView(toggleLabel)
+        toggleRow.isClickable = true
+        toggleRow.setOnClickListener {
+            server.enabled = !server.enabled
+            manager.saveServers()
+            sheet.dismiss()
+            onRefresh()
+        }
+        sheet.body.addView(toggleRow)
+
+        // Edit
+        val editRow = Ui.settingsRow(this)
+        editRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
+        editRow.addView(Ui.glyph(this, "\u270e", Ui.GlyphSize.MID))
+        val editLabel = Ui.Type.label(this, Fa.MCP_EDIT)
+        editLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        editRow.addView(editLabel)
+        editRow.isClickable = true
+        editRow.setOnClickListener {
+            sheet.dismiss()
+            showMcpEditSheet(parentSheet, manager, server)
+        }
+        sheet.body.addView(editRow)
+
+        // Delete
+        val deleteRow = Ui.settingsRow(this)
+        deleteRow.setPadding(Theme.dp(this, 16f), Theme.dp(this, 12f), Theme.dp(this, 16f), Theme.dp(this, 12f))
+        deleteRow.addView(Ui.glyph(this, "\u2716", Ui.GlyphSize.MID))
+        val deleteLabel = Ui.Type.label(this, Fa.MCP_REMOVE)
+        deleteLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        deleteRow.addView(deleteLabel)
+        deleteRow.isClickable = true
+        deleteRow.setOnClickListener {
+            manager.removeServer(server.id)
+            sheet.dismiss()
+            onRefresh()
+        }
+        sheet.body.addView(deleteRow)
+
+        sheet.show()
+    }
+
+    private fun showMcpAddSheet(parentSheet: Sheet, manager: McpManager, onRefresh: () -> Unit) {
+        val sheet = Sheet(this)
+        sheet.header("+", Fa.MCP_ADD, null)
+
+        val labelInput = field(sheet.body, Fa.MCP_LABEL, "Make", InputType.TYPE_CLASS_TEXT)
+        val urlInput = field(sheet.body, Fa.MCP_URL, Fa.MCP_URL_HINT, InputType.TYPE_TEXT_VARIATION_URI)
+
+        // Auth type selector
+        val authLabel = TextView(this)
+        authLabel.typeface = Theme.ui()
+        authLabel.text = Fa.MCP_AUTH_TYPE
+        authLabel.setTextColor(Theme.TEXT_MUTED)
+        authLabel.textSize = Ui.Type.MICRO
+        sheet.body.addView(authLabel)
+
+        var selectedAuth = McpServer.AUTH_NONE
+        val authOptions = listOf(Fa.MCP_AUTH_NONE, Fa.MCP_AUTH_API_KEY, Fa.MCP_AUTH_OAUTH2)
+        val authValues = listOf(McpServer.AUTH_NONE, McpServer.AUTH_API_KEY, McpServer.AUTH_OAUTH2)
+        val authTrack = segmentContainer(0f)
+        val authPills = mutableListOf<LinearLayout>()
+        for (i in authOptions.indices) {
+            val pill = segmentCell(authOptions[i])
+            authTrack.addView(pill)
+            authPills.add(pill)
+            pill.setOnClickListener {
+                selectedAuth = authValues[i]
+                paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
+            }
+        }
+        paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
+        sheet.body.addView(authTrack)
+
+        // API key field (shown when auth is API_KEY)
+        val apiKeyInput = EditText(this)
+        apiKeyInput.typeface = Theme.ui()
+        apiKeyInput.hint = Fa.MCP_API_KEY_HINT
+        apiKeyInput.setHintTextColor(Theme.TEXT_FAINT)
+        apiKeyInput.setTextColor(Theme.TEXT)
+        apiKeyInput.textSize = Ui.Type.LABEL
+        apiKeyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        apiKeyInput.background = fieldBg(false)
+        apiKeyInput.setPadding(
+            Theme.dp(this, 16f), Theme.dp(this, 12f),
+            Theme.dp(this, 16f), Theme.dp(this, 12f)
+        )
+        apiKeyInput.visibility = View.GONE
+        sheet.body.addView(apiKeyInput)
+
+        // OAuth fields (shown when auth is OAUTH2)
+        val oauthClientId = field(sheet.body, Fa.MCP_CLIENT_ID, "", InputType.TYPE_CLASS_TEXT)
+        val oauthAuthEp = field(sheet.body, Fa.MCP_AUTH_ENDPOINT, "https://", InputType.TYPE_TEXT_VARIATION_URI)
+        val oauthTokenEp = field(sheet.body, Fa.MCP_TOKEN_ENDPOINT, "https://", InputType.TYPE_TEXT_VARIATION_URI)
+        val oauthScopes = field(sheet.body, Fa.MCP_SCOPES, "openid profile", InputType.TYPE_CLASS_TEXT)
+
+        // Show/hide auth-specific fields
+        fun updateAuthFields() {
+            apiKeyInput.visibility = if (selectedAuth == McpServer.AUTH_API_KEY) View.VISIBLE else View.GONE
+            val oauthVisible = if (selectedAuth == McpServer.AUTH_OAUTH2) View.VISIBLE else View.GONE
+            oauthClientId.visibility = oauthVisible
+            oauthAuthEp.visibility = oauthVisible
+            oauthTokenEp.visibility = oauthVisible
+            oauthScopes.visibility = oauthVisible
+        }
+        updateAuthFields()
+        // Re-run after paintSegment
+        for (pill in authPills) {
+            pill.setOnClickListener {
+                val idx = authPills.indexOf(pill)
+                selectedAuth = authValues[idx]
+                paintSegment(authPills) { i -> authValues[i] == selectedAuth }
+                updateAuthFields()
+            }
+        }
+
+        // Save button
+        val saveBtn = Ui.pillButton(this, Fa.MCP_SAVE, null, Ui.PRIMARY) {
+            val label = labelInput.text.toString().trim()
+            val url = urlInput.text.toString().trim()
+            if (label.isEmpty() || url.isEmpty()) {
+                say("Label and URL are required", false)
+                return@pillButton
+            }
+
+            val server = McpServer(
+                id = McpServer.generateId(),
+                label = label,
+                url = url,
+                authType = selectedAuth
+            )
+
+            // Store API key if provided
+            if (selectedAuth == McpServer.AUTH_API_KEY && apiKeyInput.text.isNotEmpty()) {
+                manager.storeApiKey(server, apiKeyInput.text.toString())
+            }
+
+            // OAuth config
+            if (selectedAuth == McpServer.AUTH_OAUTH2) {
+                server.oauth.clientId = oauthClientId.text.toString().trim()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
+                val scopesStr = oauthScopes.text.toString().trim()
+                server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
+                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            }
+
+            manager.addServer(server)
+            sheet.dismiss()
+
+            // Connect the new server in background
+            Thread {
+                try {
+                    manager.connectAll()
+                } catch (_: Exception) {}
+                runOnUiThread { onRefresh() }
+            }.start()
+        }
+        sheet.body.addView(saveBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        sheet.show()
+    }
+
+    private fun showMcpEditSheet(parentSheet: Sheet, manager: McpManager, server: McpServer) {
+        val sheet = Sheet(this)
+        sheet.header("\u270e", Fa.MCP_EDIT, null)
+
+        val labelInput = field(sheet.body, Fa.MCP_LABEL, server.label, InputType.TYPE_CLASS_TEXT)
+        labelInput.setText(server.label)
+        val urlInput = field(sheet.body, Fa.MCP_URL, Fa.MCP_URL_HINT, InputType.TYPE_TEXT_VARIATION_URI)
+        urlInput.setText(server.url)
+
+        // Auth type
+        val authLabel = TextView(this)
+        authLabel.typeface = Theme.ui()
+        authLabel.text = Fa.MCP_AUTH_TYPE
+        authLabel.setTextColor(Theme.TEXT_MUTED)
+        authLabel.textSize = Ui.Type.MICRO
+        sheet.body.addView(authLabel)
+
+        var selectedAuth = server.authType
+        val authOptions = listOf(Fa.MCP_AUTH_NONE, Fa.MCP_AUTH_API_KEY, Fa.MCP_AUTH_OAUTH2)
+        val authValues = listOf(McpServer.AUTH_NONE, McpServer.AUTH_API_KEY, McpServer.AUTH_OAUTH2)
+        val authTrack = segmentContainer(0f)
+        val authPills = mutableListOf<LinearLayout>()
+        for (i in authOptions.indices) {
+            val pill = segmentCell(authOptions[i])
+            authTrack.addView(pill)
+            authPills.add(pill)
+            pill.setOnClickListener {
+                selectedAuth = authValues[i]
+                paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
+                updateAuthFields()
+            }
+        }
+        paintSegment(authPills) { idx -> authValues[idx] == selectedAuth }
+        sheet.body.addView(authTrack)
+
+        // API key field
+        val apiKeyInput = EditText(this)
+        apiKeyInput.typeface = Theme.ui()
+        apiKeyInput.hint = Fa.MCP_API_KEY_HINT
+        apiKeyInput.setHintTextColor(Theme.TEXT_FAINT)
+        apiKeyInput.setTextColor(Theme.TEXT)
+        apiKeyInput.textSize = Ui.Type.LABEL
+        apiKeyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        apiKeyInput.background = fieldBg(false)
+        apiKeyInput.setPadding(
+            Theme.dp(this, 16f), Theme.dp(this, 12f),
+            Theme.dp(this, 16f), Theme.dp(this, 12f)
+        )
+        if (selectedAuth == McpServer.AUTH_API_KEY) {
+            apiKeyInput.setText(manager.getApiKey(server))
+        }
+        sheet.body.addView(apiKeyInput)
+
+        // OAuth fields
+        val oauthClientId = field(sheet.body, Fa.MCP_CLIENT_ID, server.oauth.clientId, InputType.TYPE_CLASS_TEXT)
+        oauthClientId.setText(server.oauth.clientId)
+        val oauthAuthEp = field(sheet.body, Fa.MCP_AUTH_ENDPOINT, "https://", InputType.TYPE_TEXT_VARIATION_URI)
+        oauthAuthEp.setText(server.oauth.authorizationEndpoint)
+        val oauthTokenEp = field(sheet.body, Fa.MCP_TOKEN_ENDPOINT, "https://", InputType.TYPE_TEXT_VARIATION_URI)
+        oauthTokenEp.setText(server.oauth.tokenEndpoint)
+        val oauthScopes = field(sheet.body, Fa.MCP_SCOPES, "openid profile", InputType.TYPE_CLASS_TEXT)
+        oauthScopes.setText(server.oauth.scopes.joinToString(", "))
+
+        fun updateAuthFields() {
+            apiKeyInput.visibility = if (selectedAuth == McpServer.AUTH_API_KEY) View.VISIBLE else View.GONE
+            val oauthVisible = if (selectedAuth == McpServer.AUTH_OAUTH2) View.VISIBLE else View.GONE
+            oauthClientId.visibility = oauthVisible
+            oauthAuthEp.visibility = oauthVisible
+            oauthTokenEp.visibility = oauthVisible
+            oauthScopes.visibility = oauthVisible
+        }
+        updateAuthFields()
+
+        val saveBtn = Ui.pillButton(this, Fa.MCP_SAVE, null, Ui.PRIMARY) {
+            server.label = labelInput.text.toString().trim()
+            server.url = urlInput.text.toString().trim()
+            server.authType = selectedAuth
+
+            if (selectedAuth == McpServer.AUTH_API_KEY) {
+                val key = apiKeyInput.text.toString().trim()
+                if (key.isNotEmpty()) manager.storeApiKey(server, key)
+            }
+
+            if (selectedAuth == McpServer.AUTH_OAUTH2) {
+                server.oauth.clientId = oauthClientId.text.toString().trim()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
+                val scopesStr = oauthScopes.text.toString().trim()
+                server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
+                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            }
+
+            manager.saveServers()
+            sheet.dismiss()
+
+            // Reconnect in background
+            Thread {
+                try {
+                    manager.disconnectServer(server)
+                    manager.connectAll()
+                } catch (_: Exception) {}
+                runOnUiThread { recreate() }
+            }.start()
+        }
+        sheet.body.addView(saveBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        // OAuth "Authorize" button — visible only for OAuth servers
+        if (server.authType == McpServer.AUTH_OAUTH2) {
+            val authBtn = Ui.pillButton(this, Fa.MCP_OAUTH_AUTHORIZE, null, Ui.PRIMARY) {
+                // Save first so the server ID is in prefs before launching Custom Tabs
+                server.label = labelInput.text.toString().trim()
+                server.url = urlInput.text.toString().trim()
+                server.oauth.clientId = oauthClientId.text.toString().trim()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
+                val scopesStr = oauthScopes.text.toString().trim()
+                server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
+                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                manager.saveServers()
+
+                val oauthManager = McpOAuthManager(this)
+                oauthManager.startAuthorization(this, server,
+                    object : McpOAuthManager.OAuthCallback {
+                        override fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?) {
+                            manager.saveServers()
+                            runOnUiThread { recreate() }
+                        }
+                        override fun onError(error: String) {
+                            runOnUiThread { say(error, true) }
+                        }
+                        override fun onCancel() {}
+                    })
+            }
+            sheet.body.addView(authBtn, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+
+        sheet.show()
+    }
+
+    private fun field(parent: LinearLayout, label: String, hint: String, inputType: Int): EditText {
+        val lbl = TextView(this)
+        lbl.typeface = Theme.ui()
+        lbl.text = label
+        lbl.setTextColor(Theme.TEXT_MUTED)
+        lbl.textSize = Ui.Type.MICRO
+        parent.addView(lbl)
+        val et = EditText(this)
+        et.typeface = Theme.ui()
+        et.hint = hint
+        et.setHintTextColor(Theme.TEXT_FAINT)
+        et.setTextColor(Theme.TEXT)
+        et.textSize = Ui.Type.LABEL
+        et.inputType = inputType
+        et.background = fieldBg(false)
+        et.setPadding(
+            Theme.dp(this, 16f), Theme.dp(this, 12f),
+            Theme.dp(this, 16f), Theme.dp(this, 12f)
+        )
+        parent.addView(et)
+        return et
+    }
+
+    // =====================================================================
     // Building blocks
     // =====================================================================
 
@@ -2499,6 +2952,42 @@ class SettingsActivity : Activity() {
             startActivity(intent)
         } catch (e: Exception) {
             say(url, true)
+        }
+    }
+
+    /**
+     * Handles the OAuth 2.0 redirect from AppAuth Custom Tabs when a user
+     * completes server authentication. The scheme `vegaagent://oauth2callback`
+     * is declared in AndroidManifest.xml for this activity.
+     */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.data?.let { uri ->
+            if (uri.scheme == "vegaagent" && uri.host == "oauth2callback") {
+                val serverId = prefs.str(McpOAuthManager.MCP_OAUTH_SERVER_ID_KEY)
+                if (serverId.isNotEmpty()) {
+                    val mcpManager = McpManager(this)
+                    val servers = mcpManager.loadServers()
+                    val server = servers.find { it.id == serverId }
+                    if (server != null) {
+                        val oauthManager = McpOAuthManager(this)
+                        oauthManager.handleAuthorizationResponse(intent, server,
+                            object : McpOAuthManager.OAuthCallback {
+                                override fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?) {
+                                    mcpManager.saveServers()
+                                    runOnUiThread { say(Fa.MCP_OAUTH_AUTHORIZE) }
+                                }
+                                override fun onError(error: String) {
+                                    runOnUiThread { say(error, true) }
+                                }
+                                override fun onCancel() {
+                                    // no-op
+                                }
+                            })
+                        oauthManager.dispose()
+                    }
+                }
+            }
         }
     }
 

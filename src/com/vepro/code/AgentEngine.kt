@@ -24,6 +24,15 @@ class AgentEngine(
     private val llm = LlmClient(prefs)
     private val memory = Memory(context)
 
+    init {
+        // Connect MCP servers at startup so tools are available before the first
+        // system prompt is built. connectAll() runs on a background executor;
+        // the prompt is built synchronously a moment later and sees an empty
+        // tool list on slow connections — that is acceptable; the tools appear
+        // in the NEXT step once the connections finish.
+        try { tools.connectMcpServers() } catch (_: Exception) {}
+    }
+
     interface Callback {
         fun isCancelled(): Boolean
         fun onComplete()
@@ -56,6 +65,7 @@ class AgentEngine(
         token.isCancelled || callback.isCancelled()
 
     fun run(chat: Chat, token: CancellationToken, callback: Callback) {
+        try {
         val nudges = ArrayList<String>()
         var stalls = 0
         // Bounded recovery counters. Each one exists so a specific failure feeds
@@ -952,6 +962,9 @@ class AgentEngine(
         callback.onNewAssistantMessage(maxed)
         callback.onStepFinalized(maxed)
         callback.onComplete()
+        } finally {
+            try { tools.disconnectMcpServers() } catch (_: Exception) {}
+        }
     }
 
     // ---- activity trail ----------------------------------------------------
@@ -1931,6 +1944,8 @@ class AgentEngine(
         }
         sb.append("- remember { text } — save a durable fact to long-term memory. (modifying)\n")
         sb.append("- recall {} — read everything saved in long-term memory.\n\n")
+        // MCP tools from connected servers
+        sb.append(tools.mcpToolsText())
         sb.append(reasoningBlock())
         sb.append("\n")
         sb.append("# Guidance\n")

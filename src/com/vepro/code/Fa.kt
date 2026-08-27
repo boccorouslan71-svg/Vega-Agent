@@ -432,4 +432,43 @@ object Fa {
         }
         return LEGACY_STALLED.contains(t)
     }
+
+    // ── MCP (Model Context Protocol) ────────────────────────────────────
+
+    val MCP_TITLE = if (farsi) "Serveurs MCP" else "MCP Servers"
+    val MCP_ADD = if (farsi) "Ajouter un serveur" else "Add server"
+    val MCP_EDIT = if (farsi) "Modifier le serveur" else "Edit server"
+    val MCP_REMOVE = if (farsi) "Supprimer le serveur" else "Remove server"
+    val MCP_CONNECT = if (farsi) "Connecter" else "Connect"
+    val MCP_DISCONNECT = if (farsi) "Déconnecter" else "Disconnect"
+    val MCP_LABEL = if (farsi) "Nom du serveur" else "Server name"
+    val MCP_URL = if (farsi) "URL du endpoint" else "Endpoint URL"
+    val MCP_URL_HINT = if (farsi) "https://exemple.com/mcp" else "https://example.com/mcp"
+    val MCP_TRANSPORT = if (farsi) "Transport" else "Transport"
+    val MCP_AUTH_TYPE = if (farsi) "Authentification" else "Authentication"
+    val MCP_AUTH_NONE = if (farsi) "Aucune" else "None"
+    val MCP_AUTH_API_KEY = if (farsi) "Clé API" else "API Key"
+    val MCP_AUTH_OAUTH2 = if (farsi) "OAuth 2.0 (PKCE)" else "OAuth 2.0 (PKCE)"
+    val MCP_API_KEY = if (farsi) "Clé API" else "API Key"
+    val MCP_API_KEY_HINT = if (farsi) "Entrez votre clé API" else "Enter your API key"
+    val MCP_CLIENT_ID = if (farsi) "Client ID" else "Client ID"
+    val MCP_AUTH_ENDPOINT = if (farsi) "Point d'entrée d'autorisation" else "Authorization endpoint"
+    val MCP_TOKEN_ENDPOINT = if (farsi) "Point d'entrée du jeton" else "Token endpoint"
+    val MCP_REDIRECT_URI = if (farsi) "URI de redirection" else "Redirect URI"
+    val MCP_SCOPES = if (farsi) "Portées (séparées par des virgules)" else "Scopes (comma-separated)"
+    val MCP_STATUS_CONNECTED = if (farsi) "Connecté (%s outils)" else "Connected (%s tools)"
+    val MCP_STATUS_NOT_CONNECTED = if (farsi) "Non connecté" else "Not connected"
+    val MCP_STATUS_DISABLED = if (farsi) "Désactivé" else "Disabled"
+    val MCP_NO_SERVERS = if (farsi) "Aucun serveur configuré" else "No servers configured"
+    val MCP_TOOLS_LABEL = if (farsi) "Outils MCP" else "MCP Tools"
+    val MCP_CONNECTING = if (farsi) "Connexion en cours..." else "Connecting..."
+    val MCP_AUTHORIZED = if (farsi) "Autorisé ✓" else "Authorized ✓"
+    val MCP_AUTH_FAILED = if (farsi) "Échec de l'autorisation" else "Authorization failed"
+    val MCP_SAVE = if (farsi) "Enregistrer" else "Save"
+    val MCP_CANCEL = if (farsi) "Annuler" else "Cancel"
+    val MCP_ADVANCED = if (farsi) "Avancé" else "Advanced"
+    val MCP_OAUTH_AUTHORIZE = if (farsi) "Autoriser l'accès" else "Authorize Access"
+    val MCP_OAUTH_CONNECT = if (farsi) "Connecter avec OAuth" else "Connect with OAuth"
+    val MCP_TOGGLE_ENABLE = if (farsi) "Activer le serveur" else "Enable server"
+    val MCP_TOGGLE_DISABLE = if (farsi) "Désactiver le serveur" else "Disable server"
 }

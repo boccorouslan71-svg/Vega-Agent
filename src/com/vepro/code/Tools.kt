@@ -42,6 +42,7 @@ class Tools(context: Context) {
     private val ctx: Context = context.applicationContext
     private val memory: Memory
     private val prefs: Prefs
+    private val mcpManager: McpManager
 
     @Volatile
     private var activeToken = CancellationToken()
@@ -65,9 +66,13 @@ class Tools(context: Context) {
     init {
         memory = Memory(ctx)
         prefs = Prefs(ctx)
+        mcpManager = McpManager(ctx)
         // Enable WebView-backed "human mode" fetching (anti-bot / JS challenges).
         HumanFetch.init(ctx)
     }
+
+    /** Expose the MCP manager for SettingsActivity and AgentEngine. */
+    fun mcpManager(): McpManager = mcpManager
 
     /** Constant tool names, shared with Prefs and the system prompt. */
     object ToolNames {
@@ -337,6 +342,56 @@ class Tools(context: Context) {
         return true
     }
 
+    // ---- MCP tool helpers -------------------------------------------------
+
+    /**
+     * Generate text descriptions for MCP tools, appended to the system prompt
+     * so the LLM knows about them. Format matches the existing tool list style.
+     */
+    fun mcpToolsText(): String {
+        val tools = mcpManager.allTools()
+        if (tools.isEmpty()) return ""
+        val sb = StringBuilder()
+        sb.append("# MCP tools (remote servers)\n")
+        for (tool in tools) {
+            sb.append("- ").append(tool.fullName).append(" ")
+            // Show parameter names from the input schema
+            try {
+                val schema = JSONObject(tool.inputSchema)
+                val props = schema.optJSONObject("properties")
+                if (props != null && props.length() > 0) {
+                    val paramNames = mutableListOf<String>()
+                    for (key in props.keys()) {
+                        paramNames.add(key)
+                    }
+                    sb.append("{ ").append(paramNames.joinToString(", ")).append(" }")
+                } else {
+                    sb.append("{ }")
+                }
+            } catch (_: Exception) {
+                sb.append("{ }")
+            }
+            sb.append(" — ").append(tool.description).append("\n")
+        }
+        sb.append("\n")
+        return sb.toString()
+    }
+
+    /**
+     * Connect all MCP servers. Called once at agent startup.
+     */
+    fun connectMcpServers(onDone: (() -> Unit)? = null) {
+        mcpManager.loadServers()
+        mcpManager.connectAll(onDone)
+    }
+
+    /**
+     * Disconnect all MCP servers. Called on agent shutdown.
+     */
+    fun disconnectMcpServers() {
+        mcpManager.disconnectAll()
+    }
+
     // ---- dispatch ----------------------------------------------------------
 
     fun run(name: String, args: JSONObject?): String = run(name, args, CancellationToken())
@@ -529,7 +584,22 @@ class Tools(context: Context) {
                 ToolNames.LIST_ARCHIVE -> listArchive(a, observer)
                 ToolNames.READ_ARCHIVE_ENTRY -> readArchiveEntry(a, observer)
                 ToolNames.READ_PDF -> readPdf(a, observer)
-                else -> "ERROR: unknown tool '$name'"
+                else -> {
+                    // MCP tool dispatch: route to the correct server
+                    if (mcpManager.isMcpTool(name)) {
+                        try {
+                            val result = mcpManager.callTool(name, a)
+                            val formatted = mcpManager.formatToolResult(result)
+                            formatted.optString("output", result.toString(2))
+                        } catch (e: McpException) {
+                            "ERROR: MCP tool '$name' failed: ${e.message}"
+                        } catch (e: Exception) {
+                            "ERROR: MCP tool '$name' failed: ${e.javaClass.simpleName}: ${e.message}"
+                        }
+                    } else {
+                        "ERROR: unknown tool '$name'"
+                    }
+                }
             }
         } catch (cancelled: CancellationToken.CancelledException) {
             "CANCELLED: user stopped this tool"
@@ -1983,6 +2053,27 @@ class Tools(context: Context) {
     }
 
     companion object {
+
+        /**
+         * Build a JSON tool definition in the standard format:
+         * {"name": ..., "description": ..., "parameters": {...}}
+         */
+        fun toolJsonDef(name: String, desc: String, paramsJson: String): JSONObject {
+            val obj = JSONObject()
+            obj.put("name", name)
+            obj.put("description", desc)
+            obj.put("type", "function")
+            val func = JSONObject()
+            func.put("name", name)
+            func.put("description", desc)
+            try {
+                func.put("parameters", JSONObject(paramsJson))
+            } catch (_: Exception) {
+                func.put("parameters", JSONObject())
+            }
+            obj.put("function", func)
+            return obj
+        }
 
         /**
          * Hard ceiling on the lines one read_file call returns.

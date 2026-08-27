@@ -151,7 +151,9 @@ android {
     }
 }
 
-// Zero third-party dependencies: only the Android framework, org.json (part of
-// the platform) and the Kotlin standard library, which the Kotlin plugin adds.
 dependencies {
+    // AppAuth-Android for OAuth 2.0 / PKCE (MCP server authentication).
+    // Pulls in androidx.browser:browser for Custom Tabs, which is compatible
+    // with the existing minSdk 23 / compileSdk 35 targets.
+    implementation("net.openid:appauth:0.11.1")
 }

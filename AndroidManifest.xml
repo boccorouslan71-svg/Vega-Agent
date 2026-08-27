@@ -58,7 +58,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <activity android:configChanges="keyboardHidden|keyboard|navigation|orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode" android:exported="false" android:name=".SettingsActivity" android:theme="@style/AppTheme" android:windowSoftInputMode="adjustResize"/>
+        <activity android:configChanges="keyboardHidden|keyboard|navigation|orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode" android:exported="true" android:name=".SettingsActivity" android:theme="@style/AppTheme" android:windowSoftInputMode="adjustResize">
+            <!-- OAuth 2.0 redirect for MCP server authentication (AppAuth) -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="vegaagent" android:host="oauth2callback"/>
+            </intent-filter>
+        </activity>
         <service android:exported="false" android:foregroundServiceType="dataSync" android:name=".AgentService"/>
     </application>
 </manifest>

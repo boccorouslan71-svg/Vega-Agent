@@ -200,6 +200,39 @@ with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED
 print('staged stdlib without module-info')
 PY
 
+printf '== stage appauth ==\n'
+# AppAuth-Android (OAuth 2.0 / PKCE) and its transitive AndroidX dependencies.
+# Each AAR is fetched from Maven Central, classes.jar extracted into the build
+# directory so d8 can dex them alongside the project's own classes and stdlib.
+MAVEN_BASE="https://repo1.maven.org/maven2"
+APPAUTH_DEPS=(
+  "net/openid/appauth/appauth/0.11.1/appauth-0.11.1.aar"
+  "androidx/browser/browser/1.3.0/browser-1.3.0.aar"
+  "androidx/core/core/1.6.0/core-1.6.0.aar"
+  "androidx/customview/customview/1.0.0/customview-1.0.0.aar"
+  "androidx/annotation/annotation/1.2.0/annotation-1.2.0.aar"
+)
+for dep in "${APPAUTH_DEPS[@]}"; do
+  jar_name="${dep##*/}"
+  jar_name="${jar_name%.aar}.jar"
+  dest="$BUILD_DIR/out/$jar_name"
+  if [[ ! -e "$dest" ]]; then
+    printf '  downloading %s\n' "$dep"
+    tmp_aar="$BUILD_DIR/out/${dep##*/}"
+    curl -sSfL "$MAVEN_BASE/$dep" -o "$tmp_aar" || { echo "failed: $dep" >&2; exit 2; }
+    python3 - "$tmp_aar" "$dest" <<'PY'
+import sys, zipfile
+aar, dest = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(aar) as z:
+    data = z.read('classes.jar')
+    with open(dest, 'wb') as f:
+        f.write(data)
+print(f'extracted {dest}')
+PY
+    rm -f "$tmp_aar"
+  fi
+done
+
 printf '== create release dex ==\n'
 python3 - "$BUILD_DIR/classes" "$BUILD_DIR/out/classes.txt" <<'PY'
 from pathlib import Path
@@ -211,9 +244,16 @@ PY
 # AndroidManifest's <uses-sdk> and build.gradle.kts's minSdk. They disagreed
 # (24/24/23/24/24) and a signer that promised Android 6 while d8 desugared for
 # Android 7 is precisely how API-24 calls reached a device that has no such method.
+APPAUTH_JARS=()
+for jar in "$BUILD_DIR"/out/appauth-*.jar "$BUILD_DIR"/out/browser-*.jar \
+           "$BUILD_DIR"/out/core-*.jar "$BUILD_DIR"/out/customview-*.jar \
+           "$BUILD_DIR"/out/annotation-*.jar; do
+  [[ -e "$jar" ]] && APPAUTH_JARS+=("$jar")
+done
 "${D8[@]}" --release --min-api 23 --lib "$ANDROID_JAR" \
   --output "$BUILD_DIR/dex" \
   "$BUILD_DIR/out/kotlin-stdlib-dex.jar" \
+  "${APPAUTH_JARS[@]}" \
   @"$BUILD_DIR/out/classes.txt"
 
 printf '== package and align ==\n'

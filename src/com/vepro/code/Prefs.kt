@@ -274,6 +274,16 @@ class Prefs(context: Context) {
         NetworkPolicy.allowLocalNetwork = value
     }
 
+    // ---- MCP helpers --------------------------------------------------------
+
+    /** Generic string getter for arbitrary keys (used by McpManager). */
+    fun str(key: String, def: String): String = sp.getString(key, def) ?: def
+
+    /** Generic string setter for arbitrary keys (used by McpManager). */
+    fun save(key: String, value: String) {
+        sp.edit().putString(key, value).apply()
+    }
+
     fun systemPrompt(): String = sp.getString("sys_prompt", "") ?: ""
 
     fun setSystemPrompt(value: String?) {
