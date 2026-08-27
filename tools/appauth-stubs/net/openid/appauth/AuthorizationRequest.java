@@ -5,6 +5,11 @@ public class AuthorizationRequest {
     public final String codeVerifier;
     public final String state;
     public Map<String, String> additionalParameters;
+    public AuthorizationRequest(String codeVerifier, String state, Map<String, String> additionalParameters) {
+        this.codeVerifier = codeVerifier;
+        this.state = state;
+        this.additionalParameters = additionalParameters;
+    }
     public static class Builder {
         public Builder(AuthorizationServiceConfiguration config, String clientId, String responseType, Uri redirectUri) {}
         public Builder setScopes(String... scopes) { return this; }
