@@ -60,14 +60,12 @@ step "org.json"
 find "$ROOT/tools/json-src" -name '*.java' > "$OUT/json-files.txt"
 javac -nowarn -d "$OUT/json-classes" @"$OUT/json-files.txt"
 
+SUPPORT="$OUT/stubs-classes:$OUT/json-classes"
+
 step "appauth stubs"
 mkdir -p "$OUT/appauth-classes"
 find "$ROOT/tools/appauth-stubs" -name '*.java' > "$OUT/appauth-files.txt"
-javac -nowarn -d "$OUT/appauth-classes" @"$OUT/appauth-files.txt"
-
-step "R.java"
-python3 "$ROOT/tools/gen_r.py" "$OUT/gen"
-R_JAVA="$OUT/gen/com/vepro/code/R.java"
+javac -nowarn -cp "$SUPPORT" -d "$OUT/appauth-classes" @"$OUT/appauth-files.txt"
 
 SUPPORT="$OUT/stubs-classes:$OUT/json-classes:$OUT/appauth-classes"
 

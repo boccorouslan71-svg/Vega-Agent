@@ -52,14 +52,10 @@ class McpOAuthManager(private val context: Context) {
         val oauth = server.oauth
 
         // Build service configuration from endpoints
-        val serviceConfig = AuthorizationServiceConfiguration.Builder()
-            .setAuthorizationEndpoint(
-                android.net.Uri.parse(oauth.authorizationEndpoint)
-            )
-            .setTokenEndpoint(
-                android.net.Uri.parse(oauth.tokenEndpoint)
-            )
-            .build()
+        val serviceConfig = AuthorizationServiceConfiguration(
+            android.net.Uri.parse(oauth.authorizationEndpoint),
+            android.net.Uri.parse(oauth.tokenEndpoint)
+        )
 
         // Build PKCE parameters
         val authRequestBuilder = AuthorizationRequest.Builder(
@@ -174,11 +170,10 @@ class McpOAuthManager(private val context: Context) {
             return
         }
 
-        val serviceConfig = AuthorizationServiceConfiguration.Builder()
-            .setTokenEndpoint(
-                android.net.Uri.parse(oauth.tokenEndpoint)
-            )
-            .build()
+        val serviceConfig = AuthorizationServiceConfiguration(
+            android.net.Uri.parse(oauth.authorizationEndpoint),
+            android.net.Uri.parse(oauth.tokenEndpoint)
+        )
 
         val tokenRequest = TokenRequest.Builder(
             serviceConfig,
