@@ -639,9 +639,11 @@ class McpOAuthManager(private val context: Context) {
         state: String,
         resource: String?
     ): String {
-        val builder = java.net.URI.Builder()
-            .scheme("https")
-            .encodedPath(authorizationEndpoint)
+        val base = Uri.parse(authorizationEndpoint)
+        return Uri.Builder()
+            .scheme(base.scheme ?: "https")
+            .encodedAuthority(base.authority)
+            .encodedPath(base.path)
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("client_id", clientId)
             .appendQueryParameter("redirect_uri", redirectUri)
@@ -649,10 +651,9 @@ class McpOAuthManager(private val context: Context) {
             .appendQueryParameter("code_challenge", codeChallengeFor(codeVerifier))
             .appendQueryParameter("code_challenge_method", "S256")
             .appendQueryParameter("state", state)
-        if (!resource.isNullOrBlankJava()) {
-            builder.appendQueryParameter("resource", resource)
-        }
-        return builder.build().toString()
+            .also { if (!resource.isNullOrBlankJava()) it.appendQueryParameter("resource", resource) }
+            .build()
+            .toString()
     }
 
     // =====================================================================
