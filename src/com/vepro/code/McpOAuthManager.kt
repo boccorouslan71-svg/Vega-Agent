@@ -242,7 +242,11 @@ class McpOAuthManager(private val context: Context) {
         prefs.save(MCP_OAUTH_CODE_VERIFIER_KEY, codeVerifier)
 
         if (oauth.redirectUri.startsWith("http://127.0.0.1:")) {
-            startLoopbackFlow(activity, server, callback, authRequest, codeVerifier)
+            startLoopbackFlow(
+                activity, server, callback,
+                buildAuthorizationUrl(oauth, codeVerifier, state),
+                codeVerifier
+            )
         } else {
             startDeepLinkFlow(activity, server, callback, authRequest)
         }
@@ -260,16 +264,10 @@ class McpOAuthManager(private val context: Context) {
         activity: Activity,
         server: McpServer,
         callback: OAuthCallback,
-        authRequest: AuthorizationRequest,
+        authorizationUrl: String,
         codeVerifier: String
     ) {
         activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_LOOPBACK_START) }
-
-        val authorizationUrl = buildAuthorizationUrl(
-            oauth.authorizationEndpoint, oauth.clientId,
-            oauth.redirectUri, oauth.scopes, codeVerifier, state,
-            oauth.resourceUrl.ifEmpty { null }
-        )
 
         loopbackServer = McpLoopbackCallbackServer(
             expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, ""),
@@ -297,7 +295,7 @@ class McpOAuthManager(private val context: Context) {
         // That method launches AppAuth's management activity which waits for
         // a deep-link return that never arrives with a loopback redirect.
         val customTabsIntent = authService.createCustomTabsIntentBuilder().build()
-        customTabsIntent.intent.data = Uri.parse(authorizationUrl)
+        customTabsIntent.intent.data = android.net.Uri.parse(authorizationUrl)
         activity.startActivity(customTabsIntent.intent)
     }
 
@@ -630,30 +628,22 @@ class McpOAuthManager(private val context: Context) {
      * internally) so we can open it directly in a Custom Tab without going
      * through performAuthorizationRequest — required for loopback callbacks.
      */
-    private fun buildAuthorizationUrl(
-        authorizationEndpoint: String,
-        clientId: String,
-        redirectUri: String,
-        scopes: List<String>,
-        codeVerifier: String,
-        state: String,
-        resource: String?
-    ): String {
-        val base = Uri.parse(authorizationEndpoint)
-        return Uri.Builder()
-            .scheme(base.scheme ?: "https")
-            .encodedAuthority(base.authority)
-            .encodedPath(base.path)
-            .appendQueryParameter("response_type", "code")
-            .appendQueryParameter("client_id", clientId)
-            .appendQueryParameter("redirect_uri", redirectUri)
-            .appendQueryParameter("scope", scopes.joinToString(" "))
-            .appendQueryParameter("code_challenge", codeChallengeFor(codeVerifier))
-            .appendQueryParameter("code_challenge_method", "S256")
-            .appendQueryParameter("state", state)
-            .also { if (!resource.isNullOrBlankJava()) it.appendQueryParameter("resource", resource) }
-            .build()
-            .toString()
+    private fun buildAuthorizationUrl(oauth: OAuthConfig, codeVerifier: String, state: String): String {
+        val challenge = codeChallengeFor(codeVerifier)
+        val scope = oauth.scopes.joinToString(" ")
+        val base = oauth.authorizationEndpoint
+        val query = StringBuilder()
+            .append("response_type=code")
+            .append("&client_id=").append(oauth.clientId)
+            .append("&redirect_uri=").append(oauth.redirectUri)
+            .append("&scope=").append(scope)
+            .append("&code_challenge=").append(challenge)
+            .append("&code_challenge_method=S256")
+            .append("&state=").append(state)
+        if (!oauth.resourceUrl.isNullOrBlankJava()) {
+            query.append("&resource=").append(oauth.resourceUrl)
+        }
+        return if (base.contains('?')) "$base&$query" else "$base?$query"
     }
 
     // =====================================================================
