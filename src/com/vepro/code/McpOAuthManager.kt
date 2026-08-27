@@ -289,7 +289,10 @@ class McpOAuthManager(private val context: Context) {
                 }
             }
         )
-        loopbackServer?.start()
+        if (!loopbackServer?.start() ?: false) {
+            activity.runOnUiThread { callback.onError("Could not start loopback server") }
+            return
+        }
 
         // Open browser directly — do NOT use performAuthorizationRequest.
         // That method launches AppAuth's management activity which waits for
@@ -332,7 +335,7 @@ class McpOAuthManager(private val context: Context) {
         )
         val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
             .setGrantType("authorization_code")
-            .setRedirectUri(Uri.parse(McpLoopbackCallbackServer.LOOPBACK_URL))
+            .setRedirectUri(Uri.parse(loopbackServer?.getRedirectUri() ?: McpLoopbackCallbackServer.LOOPBACK_URL))
             .setAuthorizationCode(code)
             .setCodeVerifier(codeVerifier)
             .setScopes(*oauth.scopes.toTypedArray())

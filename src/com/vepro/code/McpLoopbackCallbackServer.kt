@@ -36,70 +36,92 @@ class McpLoopbackCallbackServer(
     companion object {
         const val LOOPBACK_PORT = 2083
         const val CALLBACK_PATH = "/mcp/oauth/callback"
-        const val LOOPBACK_URL = "http://127.0.0.1:$LOOPBACK_PORT$CALLBACK_PATH"
         private const val TAG = "McpLoopback"
+
+        /** Try these ports in order; some OEMs bind 2083 at boot. */
+        private val PORTS = listOf(2083, 2084, 2085, 8080, 8081)
     }
 
     /** Start listening on localhost. Must call [stop] when done. */
-    fun start() {
-        Thread({
+    fun start(): Boolean {
+        for (port in PORTS) {
             try {
-                serverSocket = ServerSocket(LOOPBACK_PORT, 1, InetAddress.getByName("127.0.0.1"))
-                Log.d(TAG, "Loopback listening on $LOOPBACK_URL")
-                val conn = serverSocket?.accept() ?: return@Thread
-                try {
-                    if (aborted.get()) return@Thread
-                    conn.inputStream.use { inp ->
-                        BufferedReader(InputStreamReader(inp)).use { reader ->
-                            val requestLine = reader.readLine() ?: return@use
-                            Log.d(TAG, "Request: $requestLine")
-                            val parts = requestLine.split(" ")
-                            val fullPath = if (parts.size >= 2) parts[1] else ""
-                            val qPos = fullPath.indexOf('?')
-                            val path = if (qPos >= 0) fullPath.substring(0, qPos) else fullPath
-                            val query = if (qPos >= 0) fullPath.substring(qPos + 1) else ""
-                            if (path != CALLBACK_PATH) {
-                                sendHtml(conn, 400, "Bad path")
-                                onResult(null, null, "Unknown callback path")
-                                return@use
-                            }
-                            val params = parseQuery(query)
-                            val code = params["code"]
-                            val state = params["state"]
-                            val error = params["error"]
-                            if (expectedState != null && state != expectedState) {
-                                sendHtml(conn, 400, "State mismatch")
-                                onResult(null, null, "State mismatch")
-                                return@use
-                            }
-                            if (error != null) {
-                                val desc = params["error_description"] ?: ""
-                                sendHtml(conn, 400, "Auth error")
-                                onResult(null, null, "$error: $desc")
-                                return@use
-                            }
-                            if (code.isNullOrEmpty()) {
-                                sendHtml(conn, 400, "No code")
-                                onResult(null, null, "No authorization code")
-                                return@use
-                            }
-                            Log.d(TAG, "Got code, sending success page")
-                            sendHtml(conn, 200, buildConnectedPage())
-                            onResult(code, state, null)
-                        }
-                    }
-                } finally {
-                    try { conn.close() } catch (_: Exception) {}
+                val socket = ServerSocket(port, 1, InetAddress.getByName("127.0.0.1")).apply {
+                    reuseAddress = true
                 }
+                serverSocket = socket
+                LOOPBACK_PORT_LOCAL = port
+                Log.d(TAG, "Loopback listening on 127.0.0.1:$port")
+                Thread({
+                    try {
+                        val conn = serverSocket?.accept() ?: return@Thread
+                        try {
+                            if (aborted.get()) return@Thread
+                            conn.inputStream.use { inp ->
+                                BufferedReader(InputStreamReader(inp)).use { reader ->
+                                    val requestLine = reader.readLine() ?: return@use
+                                    Log.d(TAG, "Request: $requestLine")
+                                    val parts = requestLine.split(" ")
+                                    val fullPath = if (parts.size >= 2) parts[1] else ""
+                                    val qPos = fullPath.indexOf('?')
+                                    val path = if (qPos >= 0) fullPath.substring(0, qPos) else fullPath
+                                    val query = if (qPos >= 0) fullPath.substring(qPos + 1) else ""
+                                    if (path != CALLBACK_PATH) {
+                                        sendHtml(conn, 400, "Bad path")
+                                        onResult(null, null, "Unknown callback path")
+                                        return@use
+                                    }
+                                    val params = parseQuery(query)
+                                    val code = params["code"]
+                                    val state = params["state"]
+                                    val error = params["error"]
+                                    if (expectedState != null && state != expectedState) {
+                                        sendHtml(conn, 400, "State mismatch")
+                                        onResult(null, null, "State mismatch")
+                                        return@use
+                                    }
+                                    if (error != null) {
+                                        val desc = params["error_description"] ?: ""
+                                        sendHtml(conn, 400, "Auth error")
+                                        onResult(null, null, "$error: $desc")
+                                        return@use
+                                    }
+                                    if (code.isNullOrEmpty()) {
+                                        sendHtml(conn, 400, "No code")
+                                        onResult(null, null, "No authorization code")
+                                        return@use
+                                    }
+                                    Log.d(TAG, "Got code, sending success page")
+                                    sendHtml(conn, 200, buildConnectedPage())
+                                    onResult(code, state, null)
+                                }
+                            }
+                        } finally {
+                            try { conn.close() } catch (_: Exception) {}
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Loopback error: ${e.message}")
+                        onResult(null, null, "Server error: ${e.message}")
+                    } finally {
+                        latch.countDown()
+                        stop()
+                    }
+                }, "mcp-loopback").apply { isDaemon = true; start() }
+                return true
             } catch (e: Exception) {
-                Log.e(TAG, "Loopback error: ${e.message}")
-                onResult(null, null, "Server error: ${e.message}")
-            } finally {
-                latch.countDown()
-                stop()
+                Log.w(TAG, "Port $port busy, trying next: ${e.message}")
             }
-        }, "mcp-loopback").apply { isDaemon = true; start() }
+        }
+        onResult(null, null, "Could not bind loopback port (all ports in use)")
+        return false
     }
+
+    /** The port we actually bound to (0 if not started). */
+    var LOOPBACK_PORT_LOCAL: Int = 0
+        private set
+
+    /** Returns the redirect URI for the actual port we bound to. */
+    fun getRedirectUri(): String = "http://127.0.0.1:$LOOPBACK_PORT_LOCAL$CALLBACK_PATH"
 
     fun await(): Boolean {
         try { return latch.await(timeoutMs, TimeUnit.MILLISECONDS) }
