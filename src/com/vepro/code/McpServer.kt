@@ -117,6 +117,10 @@ class OAuthConfig(
     var tokenEndpoint: String = "",
     var redirectUri: String = REDIRECT_URI,
     var scopes: List<String> = listOf("openid", "profile"),
+    /** Token endpoint auth method (none / client_secret_post / client_secret_basic). */
+    var tokenEndpointAuthMethod: String = "none",
+    /** Encrypted client secret, stored via SecureStore (public-client flows keep it empty). */
+    var encryptedClientSecret: String = "",
     /** Encrypted refresh token, stored via SecureStore. */
     var encryptedRefreshToken: String = "",
     /** Encrypted access token, stored via SecureStore. */
@@ -141,6 +145,8 @@ class OAuthConfig(
             arr.put(s)
         }
         obj.put("scopes", arr)
+        obj.put("tokenEndpointAuthMethod", tokenEndpointAuthMethod)
+        obj.put("encryptedClientSecret", encryptedClientSecret)
         obj.put("encryptedRefreshToken", encryptedRefreshToken)
         obj.put("encryptedAccessToken", encryptedAccessToken)
         obj.put("tokenExpiry", tokenExpiry)
@@ -156,6 +162,8 @@ class OAuthConfig(
                 authorizationEndpoint = obj.optString("authorizationEndpoint", ""),
                 tokenEndpoint = obj.optString("tokenEndpoint", ""),
                 redirectUri = obj.optString("redirectUri", REDIRECT_URI),
+                tokenEndpointAuthMethod = obj.optString("tokenEndpointAuthMethod", "none"),
+                encryptedClientSecret = obj.optString("encryptedClientSecret", ""),
                 encryptedRefreshToken = obj.optString("encryptedRefreshToken", ""),
                 encryptedAccessToken = obj.optString("encryptedAccessToken", ""),
                 tokenExpiry = obj.optLong("tokenExpiry", 0L)

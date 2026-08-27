@@ -5,6 +5,7 @@ public class AuthorizationService {
     public AuthorizationService(Context context) {}
     public void performAuthorizationRequest(AuthorizationRequest request, PendingIntent completedIntent) {}
     public void performTokenRequest(TokenRequest request, TokenResponseCallback callback) {}
+    public void performTokenRequest(TokenRequest request, ClientAuthentication clientAuthentication, TokenResponseCallback callback) {}
     public void dispose() {}
     public interface TokenResponseCallback {
         void onTokenRequestCompleted(TokenResponse response, AuthorizationException ex);

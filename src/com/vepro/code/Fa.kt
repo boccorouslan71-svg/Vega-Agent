@@ -481,4 +481,5 @@ object Fa {
     val MCP_TRANSPORT_HTTP = if (farsi) "HTTP" else "HTTP"
     val MCP_TRANSPORT_SSE = if (farsi) "SSE" else "SSE"
     val MCP_DISCOVERING = if (farsi) "Découverte des endpoints..." else "Discovering endpoints..."
+    val MCP_OAUTH_DISCOVERY_FAILED = if (farsi) "Échec de la découverte OAuth" else "OAuth discovery failed"
 }
