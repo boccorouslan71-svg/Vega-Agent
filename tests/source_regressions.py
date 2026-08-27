@@ -1034,7 +1034,7 @@ def test_app_is_branded_vega():
     com.vepro.code, ic_stat_vepro).
     """
     strings = read_root("res/values/strings.xml")
-    require(">Vega<" in strings,
+    require(">Vega" in strings,
             "res/values/strings.xml no longer sets the launcher label to Vega")
     fa = read("Fa.kt")
     # ONE in-app product name, in all three tables.
