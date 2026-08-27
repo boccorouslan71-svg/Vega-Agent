@@ -363,7 +363,7 @@ class SettingsActivity : Activity() {
         mcpLabel.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         mcpLabel.gravity = Gravity.CENTER_VERTICAL
         mcpRow.addView(mcpLabel)
-        val mcpChevron = Ui.text(this, Lang.chevronForward(), Ui.Type.LABEL, Theme.TEXT_FAINT, Theme.uiSemi())
+        val mcpChevron = Ui.text(this, Lang.chevronForward(this), Ui.Type.LABEL, Theme.TEXT_FAINT, Theme.uiSemi())
         mcpRow.addView(mcpChevron)
         mcpRow.isClickable = true
         mcpRow.setOnClickListener { openMcpServers() }
