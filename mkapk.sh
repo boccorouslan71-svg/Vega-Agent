@@ -150,36 +150,57 @@ printf '== link resources ==\n'
 
 printf '== stage appauth ==\n'
 # AppAuth-Android (OAuth 2.0 / PKCE) and its transitive AndroidX dependencies.
-# Each AAR is fetched from Maven Central, classes.jar extracted into the build
-# directory so kotlinc can resolve imports and d8 can dex them.
-MAVEN_BASE="https://repo1.maven.org/maven2"
-APPAUTH_DEPS=(
-  "net/openid/appauth/appauth/0.11.1/appauth-0.11.1.aar"
-  "androidx/browser/browser/1.3.0/browser-1.3.0.aar"
-  "androidx/core/core/1.6.0/core-1.6.0.aar"
-  "androidx/customview/customview/1.0.0/customview-1.0.0.aar"
-  "androidx/annotation/annotation/1.2.0/annotation-1.2.0.aar"
-)
-for dep in "${APPAUTH_DEPS[@]}"; do
-  jar_name="${dep##*/}"
-  jar_name="${jar_name%.aar}.jar"
-  dest="$BUILD_DIR/out/$jar_name"
-  if [[ ! -e "$dest" ]]; then
-    printf '  downloading %s\n' "$dep"
-    tmp_aar="$BUILD_DIR/out/${dep##*/}"
-    curl -sSfL "$MAVEN_BASE/$dep" -o "$tmp_aar" || { echo "failed: $dep" >&2; exit 2; }
-    python3 - "$tmp_aar" "$dest" <<'PY'
-import sys, zipfile
-aar, dest = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(aar) as z:
-    data = z.read('classes.jar')
-    with open(dest, 'wb') as f:
-        f.write(data)
-print(f'extracted {dest}')
+# Each artifact is fetched from Maven Central or Google Maven, classes.jar
+# extracted into the build directory so kotlinc can resolve imports and d8
+# can dex them.
+python3 - "$BUILD_DIR/out" <<'PY'
+import os, sys, urllib.request, zipfile
+
+OUT = sys.argv[1]
+REPOS = [
+    "https://repo1.maven.org/maven2",
+    "https://dl.google.com/dl/android/maven2",
+]
+# (groupId, artifactId, version, ext)  — ext is "aar" or "jar"
+DEPS = [
+    ("net.openid", "appauth", "0.11.1", "aar"),
+    ("androidx.browser", "browser", "1.3.0", "aar"),
+    ("androidx.core", "core", "1.6.0", "aar"),
+    ("androidx.customview", "customview", "1.0.0", "aar"),
+    ("androidx.annotation", "annotation", "1.7.0", "jar"),
+]
+for group, artifact, version, ext in DEPS:
+    jar_name = f"{artifact}-{version}.jar"
+    dest = os.path.join(OUT, jar_name)
+    if os.path.exists(dest):
+        print(f"  cached {jar_name}")
+        continue
+    gpath = group.replace(".", "/")
+    fname = f"{artifact}-{version}.{ext}"
+    path = f"{gpath}/{artifact}/{version}/{fname}"
+    downloaded = False
+    for repo in REPOS:
+        url = f"{repo}/{path}"
+        try:
+            tmp = os.path.join(OUT, fname)
+            urllib.request.urlretrieve(url, tmp)
+            downloaded = True
+            break
+        except Exception:
+            continue
+    if not downloaded:
+        print(f"  FAILED {group}:{artifact}:{version}", file=sys.stderr)
+        sys.exit(1)
+    if ext == "aar":
+        with zipfile.ZipFile(tmp) as z:
+            with open(dest, "wb") as f:
+                f.write(z.read("classes.jar"))
+        os.remove(tmp)
+        print(f"  extracted {jar_name} from AAR")
+    else:
+        os.rename(tmp, dest)
+        print(f"  downloaded {jar_name}")
 PY
-    rm -f "$tmp_aar"
-  fi
-done
 
 printf '== compile Kotlin ==\n'
 # kotlinc is given BOTH the Kotlin sources and the generated R.java. It does not

@@ -2223,12 +2223,12 @@ class SettingsActivity : Activity() {
 
             // OAuth config
             if (selectedAuth == McpServer.AUTH_OAUTH2) {
-                server.oauth.clientId = oauthClientId.text.toString().trim()
-                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
-                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
-                val scopesStr = oauthScopes.text.toString().trim()
+                server.oauth.clientId = oauthClientId.text.toString().trimJava()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trimJava()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trimJava()
+                val scopesStr = oauthScopes.text.toString().trimJava()
                 server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
-                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    else scopesStr.split(",").map { it.trimJava() }.filter { it.isNotEmpty() }
             }
 
             manager.addServer(server)
@@ -2326,22 +2326,22 @@ class SettingsActivity : Activity() {
         }
 
         val saveBtn = Ui.pillButton(this, Fa.MCP_SAVE, null, Ui.PRIMARY) {
-            server.label = labelInput.text.toString().trim()
-            server.url = urlInput.text.toString().trim()
+            server.label = labelInput.text.toString().trimJava()
+            server.url = urlInput.text.toString().trimJava()
             server.authType = selectedAuth
 
             if (selectedAuth == McpServer.AUTH_API_KEY) {
-                val key = apiKeyInput.text.toString().trim()
+                val key = apiKeyInput.text.toString().trimJava()
                 if (key.isNotEmpty()) manager.storeApiKey(server, key)
             }
 
             if (selectedAuth == McpServer.AUTH_OAUTH2) {
-                server.oauth.clientId = oauthClientId.text.toString().trim()
-                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
-                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
-                val scopesStr = oauthScopes.text.toString().trim()
+                server.oauth.clientId = oauthClientId.text.toString().trimJava()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trimJava()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trimJava()
+                val scopesStr = oauthScopes.text.toString().trimJava()
                 server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
-                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    else scopesStr.split(",").map { it.trimJava() }.filter { it.isNotEmpty() }
             }
 
             manager.saveServers()
@@ -2364,14 +2364,14 @@ class SettingsActivity : Activity() {
         if (server.authType == McpServer.AUTH_OAUTH2) {
             val authBtn = Ui.pillButton(this, Fa.MCP_OAUTH_AUTHORIZE, null, Ui.PRIMARY) {
                 // Save first so the server ID is in prefs before launching Custom Tabs
-                server.label = labelInput.text.toString().trim()
-                server.url = urlInput.text.toString().trim()
-                server.oauth.clientId = oauthClientId.text.toString().trim()
-                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trim()
-                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trim()
-                val scopesStr = oauthScopes.text.toString().trim()
+                server.label = labelInput.text.toString().trimJava()
+                server.url = urlInput.text.toString().trimJava()
+                server.oauth.clientId = oauthClientId.text.toString().trimJava()
+                server.oauth.authorizationEndpoint = oauthAuthEp.text.toString().trimJava()
+                server.oauth.tokenEndpoint = oauthTokenEp.text.toString().trimJava()
+                val scopesStr = oauthScopes.text.toString().trimJava()
                 server.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
-                    else scopesStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    else scopesStr.split(",").map { it.trimJava() }.filter { it.isNotEmpty() }
                 manager.saveServers()
 
                 val oauthManager = McpOAuthManager(this)
