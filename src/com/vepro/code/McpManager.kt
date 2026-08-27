@@ -403,7 +403,7 @@ class McpManager(private val context: Context) {
             }
             output.put("output", texts.joinToString("\n\n"))
         } else {
-            output.put("output", result.toString(2))
+            output.put("output", result.toString())
         }
 
         return output

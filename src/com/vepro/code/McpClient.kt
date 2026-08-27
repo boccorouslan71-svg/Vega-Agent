@@ -79,7 +79,7 @@ class McpClient(
 
             val body = jsonRpcRequest(method, params)
             if (false) {
-                android.util.Log.d("McpClient", ">>> $method ${body.toString(2)}")
+                android.util.Log.d("McpClient", ">>> $method ${body}")
             }
 
             conn.doOutput = true
