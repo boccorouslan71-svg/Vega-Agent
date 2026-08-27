@@ -482,4 +482,13 @@ object Fa {
     val MCP_TRANSPORT_SSE = if (farsi) "SSE" else "SSE"
     val MCP_DISCOVERING = if (farsi) "Découverte des endpoints..." else "Discovering endpoints..."
     val MCP_OAUTH_DISCOVERY_FAILED = if (farsi) "Échec de la découverte OAuth" else "OAuth discovery failed"
+    val MCP_OAUTH_LOOPBACK_START = if (farsi) "Démarrage du serveur de callback..." else "Starting loopback callback server..."
+    val MCP_OAUTH_LOOPBACK_TIMEOUT = if (farsi) "Le callback OAuth n'a pas répondu dans les temps" else "OAuth callback timed out"
+    val MCP_OAUTH_LOOPBACK_CANCELLED = if (farsi) "Autorisation annulée" else "Authorization cancelled"
+    val MCP_OAUTH_LOOPBACK_CONNECTED = if (farsi) "Connecté" else "Connected"
+    val MCP_OAUTH_LOOPBACK_FAILED = if (farsi) "Échec de la connexion" else "Connection failed"
+    val MCP_OAUTH_ORIGIN_VALIDATION = if (farsi) "Validation d'origine AS" else "AS origin validation"
+    val MCP_OAUTH_RESOURCE_HINT = if (farsi) "https://mcp.example.com" else "https://mcp.example.com"
+    val MCP_OAUTH_429_MESSAGE = if (farsi) "Nouvelles inscriptions OAuth temporairement désactivées; réessayez dans %s secondes" else "New OAuth client registrations have been temporarily disabled; retry in %s seconds"
+    val MCP_ALLOW_ORIGIN = if (farsi) "Origine autorisée (override)" else "Allowed origin (override)"
 }

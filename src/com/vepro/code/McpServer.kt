@@ -115,7 +115,8 @@ class OAuthConfig(
     var clientId: String = "",
     var authorizationEndpoint: String = "",
     var tokenEndpoint: String = "",
-    var redirectUri: String = REDIRECT_URI,
+    /** Loopback redirect_uri by default per MCP spec; deep-link fallback available. */
+    var redirectUri: String = LOOPBACK_REDIRECT_URI,
     var scopes: List<String> = listOf("openid", "profile"),
     /** Token endpoint auth method (none / client_secret_post / client_secret_basic). */
     var tokenEndpointAuthMethod: String = "none",
@@ -126,7 +127,11 @@ class OAuthConfig(
     /** Encrypted access token, stored via SecureStore. */
     var encryptedAccessToken: String = "",
     /** Token expiry timestamp (millis since epoch). 0 = unknown/expired. */
-    var tokenExpiry: Long = 0L
+    var tokenExpiry: Long = 0L,
+    /** The resource URL this client was registered for, persisted after registration. */
+    var resourceUrl: String = "",
+    /** Optional strict origin validation override (e.g. "https://www.make.com"). Empty = no override. */
+    var allowedOrigin: String = ""
 ) {
     val hasTokens: Boolean
         get() = encryptedAccessToken.isNotEmpty() || encryptedRefreshToken.isNotEmpty()
@@ -150,23 +155,30 @@ class OAuthConfig(
         obj.put("encryptedRefreshToken", encryptedRefreshToken)
         obj.put("encryptedAccessToken", encryptedAccessToken)
         obj.put("tokenExpiry", tokenExpiry)
+        obj.put("resourceUrl", resourceUrl)
+        obj.put("allowedOrigin", allowedOrigin)
         return obj
     }
 
     companion object {
-        const val REDIRECT_URI = "vegaagent://oauth2callback"
+        /** Loopback redirect_uri per the MCP Authorization spec (RFC draft). */
+        const val LOOPBACK_REDIRECT_URI = "http://127.0.0.1:2083/mcp/oauth/callback"
+        /** Deep-link fallback for devices that cannot bind loopback. */
+        const val DEEPLINK_REDIRECT_URI = "vegaagent://oauth2callback"
 
         fun fromJsonObject(obj: JSONObject): OAuthConfig {
             val config = OAuthConfig(
                 clientId = obj.optString("clientId", ""),
                 authorizationEndpoint = obj.optString("authorizationEndpoint", ""),
                 tokenEndpoint = obj.optString("tokenEndpoint", ""),
-                redirectUri = obj.optString("redirectUri", REDIRECT_URI),
+                redirectUri = obj.optString("redirectUri", LOOPBACK_REDIRECT_URI),
                 tokenEndpointAuthMethod = obj.optString("tokenEndpointAuthMethod", "none"),
                 encryptedClientSecret = obj.optString("encryptedClientSecret", ""),
                 encryptedRefreshToken = obj.optString("encryptedRefreshToken", ""),
                 encryptedAccessToken = obj.optString("encryptedAccessToken", ""),
-                tokenExpiry = obj.optLong("tokenExpiry", 0L)
+                tokenExpiry = obj.optLong("tokenExpiry", 0L),
+                resourceUrl = obj.optString("resourceUrl", ""),
+                allowedOrigin = obj.optString("allowedOrigin", "")
             )
             val scopesArr = obj.optJSONArray("scopes")
             if (scopesArr != null) {

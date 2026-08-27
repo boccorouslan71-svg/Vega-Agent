@@ -3,6 +3,7 @@ package com.vepro.code
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
@@ -19,6 +20,8 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
+import java.util.Base64
 
 /**
  * Manages OAuth 2.0 with PKCE for MCP server authentication.
@@ -32,14 +35,11 @@ import java.net.URL
  *      falling back to OpenID Connect discovery when it is not served).
  *   4. POST to `registration_endpoint` → dynamic client registration (RFC 7591).
  *   5. Launch the AppAuth PKCE flow with the discovered endpoints + client id.
- *
- * The same code works for any server following the spec; nothing here is
- * server-specific. Manual OAuth fields in the UI are voluntary only, never an
- * automatic fallback after a discovery failure.
  */
 class McpOAuthManager(private val context: Context) {
 
     private val authService: AuthorizationService = AuthorizationService(context)
+    private var loopbackServer: McpLoopbackCallbackServer? = null
 
     interface OAuthCallback {
         fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?)
@@ -67,12 +67,7 @@ class McpOAuthManager(private val context: Context) {
     )
 
     /**
-     * Step 1: find the authorization server for an MCP endpoint.
-     * Preference order per RFC 9728:
-     *   a) the `resource_metadata` parameter of the 401 `WWW-Authenticate`
-     *      challenge returned by an unauthenticated request;
-     *   b) the `.well-known/oauth-protected-resource` documents as a fallback
-     *      for servers that do not advertise the metadata location.
+     * Step 1: find the authorization server for an MCP endpoint via RFC 9728.
      */
     fun discoverProtectedResource(endpointUrl: String): String? {
         if (endpointUrl.isBlankJava()) return null
@@ -86,10 +81,7 @@ class McpOAuthManager(private val context: Context) {
 
     /**
      * Step 2: discover the authorization endpoints from the authorization
-     * server URL. Tries the RFC 8414 documents first (strict issuer path form,
-     * then root and per-path forms) and falls back to OpenID Connect discovery,
-     * then enriches the scope set from the OIDC document when the AS-only
-     * document does not advertise any scopes.
+     * server URL.
      */
     fun discoverAuthorizationServer(authServerUrl: String): DiscoveryResult? {
         for (candidate in authorizationServerMetadataCandidates(authServerUrl)) {
@@ -102,23 +94,22 @@ class McpOAuthManager(private val context: Context) {
     }
 
     /**
-     * Step 3: dynamic client registration (RFC 7591). Public client with PKCE;
-     * the server may hand back a client secret plus the token endpoint auth
-     * method it expects.
+     * Step 3: dynamic client registration (RFC 7591).
      */
-    fun registerClient(registrationEndpoint: String, redirectUri: String): RegisteredClient? {
-        val body = JSONObject()
-        body.put("redirect_uris", org.json.JSONArray().put(redirectUri))
-        body.put("client_name", "Vega MCP")
-        body.put("token_endpoint_auth_method", "none")
-        body.put("grant_types", org.json.JSONArray().apply {
-            put("authorization_code")
-            put("refresh_token")
-        })
-        body.put("response_types", org.json.JSONArray().apply {
-            put("code")
-        })
+    fun registerClient(registrationEndpoint: String, redirectUri: String, resource: String? = null): RegisteredClient? {
+        val body = JSONObject().apply {
+            put("redirect_uris", org.json.JSONArray().put(redirectUri))
+            put("client_name", "Vega MCP")
+            put("token_endpoint_auth_method", "none")
+            put("grant_types", org.json.JSONArray().apply { put("authorization_code"); put("refresh_token") })
+            put("response_types", org.json.JSONArray().apply { put("code") })
+            if (!resource.isNullOrBlankJava()) put("resource", resource)
+        }
         val res = httpRequest("POST", registrationEndpoint, body = body.toString()) ?: return null
+        if (res.status == 429) {
+            val retryAfter = res.headers["retry-after"]?.firstOrNull()?.toLongOrNull() ?: 30L
+            throw McpOAuthRateLimitException(retryAfter)
+        }
         if (res.status !in 200..299) return null
         return try {
             val obj = JSONObject(res.body)
@@ -130,18 +121,15 @@ class McpOAuthManager(private val context: Context) {
                 clientSecret = obj.optString("client_secret", ""),
                 tokenEndpointAuthMethod = if (authMethod.isEmpty()) "none" else authMethod
             )
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     /**
-     * Full auto-discovery: authorization server → endpoints → client
-     * registration. Persists the discovered fields so a later refresh uses the
-     * same client. Call off the main thread; null means discovery failed.
+     * Full auto-discovery: authorization server → endpoints → client registration.
      */
     fun autoDiscover(server: McpServer): DiscoveryResult? {
         val oauth = server.oauth
+        val resource = oauth.resourceUrl
 
         val authServerUrl = discoverProtectedResource(server.url) ?: return null
         Log.d(TAG, "authorization server: $authServerUrl")
@@ -150,10 +138,12 @@ class McpOAuthManager(private val context: Context) {
         Log.d(TAG, "discovered endpoints: ${discovery.authorizationEndpoint} / ${discovery.tokenEndpoint}")
 
         if (oauth.clientId.isEmpty() && discovery.registrationEndpoint.isNotEmpty()) {
-            val registered = registerClient(discovery.registrationEndpoint, oauth.redirectUri)
+            val registered = runCatching {
+                registerClient(discovery.registrationEndpoint, oauth.redirectUri, resource)
+            }.getOrNull()
             if (registered != null) {
                 oauth.clientId = registered.clientId
-                Log.d(TAG, "registered client ${registered.clientId} (method ${registered.tokenEndpointAuthMethod})")
+                Log.d(TAG, "registered client ${registered.clientId}")
                 if (registered.clientSecret.isNotEmpty()) {
                     oauth.encryptedClientSecret = SecureStore.encrypt(registered.clientSecret)
                     oauth.tokenEndpointAuthMethod = registered.tokenEndpointAuthMethod
@@ -189,7 +179,7 @@ class McpOAuthManager(private val context: Context) {
 
     /**
      * Start the OAuth 2.0 authorization flow.
-     * If endpoints are not yet discovered, does auto-discovery first.
+     * Uses loopback if redirect is http://127.0.0.1:*, otherwise deep link.
      */
     fun startAuthorization(
         activity: Activity,
@@ -202,18 +192,13 @@ class McpOAuthManager(private val context: Context) {
             Thread {
                 val discovery = autoDiscover(server)
                 if (discovery == null) {
-                    activity.runOnUiThread {
-                        callback.onError(Fa.MCP_OAUTH_DISCOVERY_FAILED)
-                    }
+                    activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_DISCOVERY_FAILED) }
                     return@Thread
                 }
-                activity.runOnUiThread {
-                    doStartAuthorization(activity, server, callback)
-                }
+                activity.runOnUiThread { doStartAuthorization(activity, server, callback) }
             }.start()
             return
         }
-
         doStartAuthorization(activity, server, callback)
     }
 
@@ -224,35 +209,129 @@ class McpOAuthManager(private val context: Context) {
     ) {
         val oauth = server.oauth
 
+        // Validate origin if override is set
+        if (oauth.allowedOrigin.isNotEmpty()) {
+            val actualOrigin = originOf(oauth.authorizationEndpoint)
+            if (actualOrigin != oauth.allowedOrigin) {
+                callback.onError("AS origin mismatch: expected ${oauth.allowedOrigin}, got $actualOrigin")
+                return
+            }
+        }
+
+        // Generate PKCE
+        val codeVerifier = generateCodeVerifier()
+        val state = generateState()
+
         val serviceConfig = AuthorizationServiceConfiguration(
-            android.net.Uri.parse(oauth.authorizationEndpoint),
-            android.net.Uri.parse(oauth.tokenEndpoint)
+            Uri.parse(oauth.authorizationEndpoint),
+            Uri.parse(oauth.tokenEndpoint)
         )
 
-        val authRequestBuilder = AuthorizationRequest.Builder(
+        val builder = AuthorizationRequest.Builder(
             serviceConfig,
             oauth.clientId,
             "code",
-            android.net.Uri.parse(oauth.redirectUri)
-        )
-            .setScopes(*oauth.scopes.toTypedArray())
+            Uri.parse(oauth.redirectUri)
+        ).setScopes(*oauth.scopes.toTypedArray())
+            .setState(state)
+            .setCodeVerifier(codeVerifier)
+
+        if (oauth.resourceUrl.isNotEmpty()) {
+            builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
+        }
+
+        val authRequest = builder.build()
 
         val prefs = Prefs(context)
         prefs.save(MCP_OAUTH_SERVER_ID_KEY, server.id)
+        prefs.save(MCP_OAUTH_STATE_KEY, state)
+        prefs.save(MCP_OAUTH_CODE_VERIFIER_KEY, codeVerifier)
 
-        val authRequest = authRequestBuilder.build()
+        if (oauth.redirectUri.startsWith("http://127.0.0.1:")) {
+            startLoopbackFlow(activity, server, callback, authRequest, codeVerifier)
+        } else {
+            startDeepLinkFlow(activity, server, callback, authRequest)
+        }
+    }
 
-        val completionIntent = android.content.Intent(context, SettingsActivity::class.java)
-        completionIntent.action = android.content.Intent.ACTION_VIEW
-        completionIntent.data = android.net.Uri.parse(oauth.redirectUri)
+    private fun startLoopbackFlow(
+        activity: Activity,
+        server: McpServer,
+        callback: OAuthCallback,
+        authRequest: AuthorizationRequest,
+        codeVerifier: String
+    ) {
+        activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_LOOPBACK_START) }
+
+        loopbackServer = McpLoopbackCallbackServer(
+            expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, null),
+            onResult = { code, state, error ->
+                loopbackServer = null
+                if (error != null) {
+                    activity.runOnUiThread {
+                        if (error.contains("Canceled", ignoreCase = true)) {
+                            callback.onCancel()
+                        } else {
+                            callback.onError(error)
+                        }
+                    }
+                    return@McpLoopbackCallbackServer
+                }
+                if (code != null) {
+                    exchangeCodeForToken(activity, server, callback, code, codeVerifier)
+                }
+            }
+        )
+        loopbackServer?.start()
+
+        val completionIntent = Intent(context, SettingsActivity::class.java)
+        completionIntent.action = Intent.ACTION_VIEW
+        completionIntent.data = Uri.parse(McpLoopbackCallbackServer.LOOPBACK_URL)
         val pendingIntent = android.app.PendingIntent.getActivity(
-            context,
-            PENDING_INTENT_REQUEST_CODE,
-            completionIntent,
+            context, PENDING_INTENT_REQUEST_CODE, completionIntent,
             android.app.PendingIntent.FLAG_ONE_SHOT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
-
         authService.performAuthorizationRequest(authRequest, pendingIntent)
+    }
+
+    private fun startDeepLinkFlow(
+        activity: Activity,
+        server: McpServer,
+        callback: OAuthCallback,
+        authRequest: AuthorizationRequest
+    ) {
+        val completionIntent = Intent(context, SettingsActivity::class.java)
+        completionIntent.action = Intent.ACTION_VIEW
+        completionIntent.data = Uri.parse(authRequest.redirectUri.toString())
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, PENDING_INTENT_REQUEST_CODE, completionIntent,
+            android.app.PendingIntent.FLAG_ONE_SHOT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        authService.performAuthorizationRequest(authRequest, pendingIntent)
+    }
+
+    private fun exchangeCodeForToken(
+        activity: Activity,
+        server: McpServer,
+        callback: OAuthCallback,
+        code: String,
+        codeVerifier: String
+    ) {
+        val oauth = server.oauth
+        val serviceConfig = AuthorizationServiceConfiguration(
+            Uri.parse(oauth.authorizationEndpoint),
+            Uri.parse(oauth.tokenEndpoint)
+        )
+        val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
+            .setGrantType("authorization_code")
+            .setRedirectUri(Uri.parse(McpLoopbackCallbackServer.LOOPBACK_URL))
+            .setAuthorizationCode(code)
+            .setCodeVerifier(codeVerifier)
+            .setScopes(*oauth.scopes.toTypedArray())
+        if (oauth.resourceUrl.isNotEmpty()) {
+            builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
+        }
+        performTokenRequest(builder.build(), server, callback)
     }
 
     fun handleAuthorizationResponse(
@@ -264,7 +343,7 @@ class McpOAuthManager(private val context: Context) {
         val authException = AuthorizationException.fromIntent(intent)
 
         if (authResponse == null || authException != null) {
-            callback.onError(authException?.error ?: "Authorization failed")
+            callback.onError(authException?.error ?: Fa.MCP_AUTH_FAILED)
             return
         }
 
@@ -289,15 +368,17 @@ class McpOAuthManager(private val context: Context) {
             return
         }
         val serviceConfig = AuthorizationServiceConfiguration(
-            android.net.Uri.parse(oauth.authorizationEndpoint),
-            android.net.Uri.parse(oauth.tokenEndpoint)
+            Uri.parse(oauth.authorizationEndpoint),
+            Uri.parse(oauth.tokenEndpoint)
         )
-        val tokenRequest = TokenRequest.Builder(serviceConfig, oauth.clientId)
+        val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
             .setGrantType("refresh_token")
             .setRefreshToken(refreshToken)
             .setScopes(*oauth.scopes.toTypedArray())
-            .build()
-        performTokenRequest(tokenRequest, server, callback, refreshToken)
+        if (oauth.resourceUrl.isNotEmpty()) {
+            builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
+        }
+        performTokenRequest(builder.build(), server, callback, refreshToken)
     }
 
     private fun performTokenRequest(
@@ -311,20 +392,23 @@ class McpOAuthManager(private val context: Context) {
                 val accessToken = response.accessToken ?: ""
                 val refreshToken = response.refreshToken ?: fallbackRefreshToken
 
-                val encryptedAccess = if (accessToken.isNotEmpty()) {
-                    SecureStore.encrypt(accessToken)
-                } else ""
-                val encryptedRefresh = if (refreshToken.isNotEmpty()) {
-                    SecureStore.encrypt(refreshToken)
-                } else ""
+                val encryptedAccess = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
+                val encryptedRefresh = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
 
                 server.oauth.encryptedAccessToken = encryptedAccess
                 server.oauth.encryptedRefreshToken = encryptedRefresh
                 server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
+                server.oauth.resourceUrl = tokenRequest.additionalParameters?.get("resource") ?: server.oauth.resourceUrl
 
                 callback.onSuccess(accessToken, refreshToken, response.idToken)
             } else {
-                callback.onError(ex?.localizedMessage ?: "Token exchange failed")
+                val msg = ex?.message ?: "Token exchange failed"
+                if (ex?.type == AuthorizationException.TYPE_HTTP_ERROR && ex.responseCode == 429) {
+                    val retryAfter = ex.responseHeaders?.get("Retry-After")?.firstOrNull()?.toLongOrNull() ?: 30L
+                    callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format(retryAfter))
+                } else {
+                    callback.onError(msg)
+                }
             }
         }
 
@@ -338,11 +422,7 @@ class McpOAuthManager(private val context: Context) {
 
     private fun clientAuthenticationFor(oauth: OAuthConfig): ClientAuthentication? {
         if (oauth.encryptedClientSecret.isEmpty()) return null
-        val secret = try {
-            SecureStore.decrypt(oauth.encryptedClientSecret)
-        } catch (_: Exception) {
-            ""
-        }
+        val secret = try { SecureStore.decrypt(oauth.encryptedClientSecret) } catch (_: Exception) { "" }
         if (secret.isEmpty()) return null
         return when (oauth.tokenEndpointAuthMethod) {
             "client_secret_post" -> ClientSecretPost(secret)
@@ -357,9 +437,7 @@ class McpOAuthManager(private val context: Context) {
         return try {
             val token = SecureStore.decrypt(oauth.encryptedAccessToken)
             if (token.isEmpty()) null else token
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     fun clearTokens(server: McpServer) {
@@ -368,7 +446,14 @@ class McpOAuthManager(private val context: Context) {
         server.oauth.tokenExpiry = 0L
     }
 
+    /** Abort any pending loopback callback (called from SettingsActivity.onResume). */
+    fun abortPendingLoopback() {
+        loopbackServer?.stop()
+        loopbackServer = null
+    }
+
     fun dispose() {
+        abortPendingLoopback()
         authService.dispose()
     }
 
@@ -376,15 +461,9 @@ class McpOAuthManager(private val context: Context) {
     // Discovery internals
     // =====================================================================
 
-    /**
-     * Send the unauthenticated JSON-RPC probes the MCP Authorization spec
-     * describes and return the `resource_metadata` URL advertised in the 401
-     * `WWW-Authenticate` challenge, if any. Every probe is logged for
-     * debugging.
-     */
     private fun probeChallenge(endpointUrl: String): String? {
         val probes = listOf(
-            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"Vega Agent","version":"1.0"}}}""",
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"${McpClient.MCP_PROTOCOL_VERSION}","capabilities":{},"clientInfo":{"name":"Vega Agent","version":"1.0"}}}""",
             """{"jsonrpc":"2.0","id":1,"method":"tools/list"}"""
         )
         for (payload in probes) {
@@ -413,8 +492,7 @@ class McpOAuthManager(private val context: Context) {
         for (candidate in candidates.distinct()) {
             val res = httpRequest("GET", candidate) ?: continue
             if (res.status !in 200..299) continue
-            val servers = parseAuthorizationServers(res.body)
-            if (servers.isNotEmpty()) return servers
+            if (parseAuthorizationServers(res.body).isNotEmpty()) return candidates
         }
         return emptyList()
     }
@@ -435,29 +513,17 @@ class McpOAuthManager(private val context: Context) {
                 val chosen = if (single.isNotEmpty()) single else aliased
                 if (chosen.isNotEmpty()) out.add(chosen)
             }
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
         return out
     }
 
-    /**
-     * RFC 8414 metadata document URLs, derived from the authorization server
-     * URL. Order: strict issuer path form, root form, then the same forms for
-     * OpenID Connect discovery.
-     */
     private fun authorizationServerMetadataCandidates(authServerUrl: String): List<String> {
         val origin = originOf(authServerUrl)
         val base = authServerUrl.trimEnd('/')
-        val path = try {
-            URL(authServerUrl).path.trim('/')
-        } catch (_: Exception) {
-            ""
-        }
+        val path = try { URL(authServerUrl).path.trim('/') } catch (_: Exception) { "" }
         val candidates = mutableListOf<String>()
         if (origin != null) {
-            if (path.isNotEmpty()) {
-                candidates.add("$origin/.well-known/oauth-authorization-server/$path")
-            }
+            if (path.isNotEmpty()) candidates.add("$origin/.well-known/oauth-authorization-server/$path")
             candidates.add("$origin/.well-known/oauth-authorization-server")
             candidates.add("$origin/.well-known/openid-configuration")
         }
@@ -498,9 +564,7 @@ class McpOAuthManager(private val context: Context) {
                 scopesSupported = stringArray(obj, "scopes_supported"),
                 tokenEndpointAuthMethodsSupported = stringArray(obj, "token_endpoint_auth_methods_supported")
             )
-        } catch (_: Exception) {
-            null
-        }
+        } catch (_: Exception) { null }
     }
 
     private fun stringArray(obj: JSONObject, key: String): List<String> {
@@ -520,10 +584,6 @@ class McpOAuthManager(private val context: Context) {
         else -> "none"
     }
 
-    /**
-     * Write the discovered OAuth fields back to preferences so that a later
-     * refresh (or a cancelled first authorization) reuses the same client.
-     */
     private fun persistDiscovery(server: McpServer) {
         try {
             val manager = McpManager(context)
@@ -536,10 +596,26 @@ class McpOAuthManager(private val context: Context) {
             to.tokenEndpoint = from.tokenEndpoint
             to.tokenEndpointAuthMethod = from.tokenEndpointAuthMethod
             to.encryptedClientSecret = from.encryptedClientSecret
+            to.resourceUrl = from.resourceUrl
             if (from.scopes.isNotEmpty()) to.scopes = from.scopes
             manager.saveServers()
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
+    }
+
+    // =====================================================================
+    // PKCE helpers
+    // =====================================================================
+
+    private fun generateCodeVerifier(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    private fun generateState(): String {
+        val bytes = ByteArray(16)
+        SecureRandom().nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     // =====================================================================
@@ -564,7 +640,7 @@ class McpOAuthManager(private val context: Context) {
                 requestMethod = method
                 connectTimeout = 10000
                 readTimeout = 10000
-                instanceFollowRedirects = true
+                instanceFollowRedirects = false
                 setRequestProperty("Accept", accept)
                 if (contentType != null) setRequestProperty("Content-Type", contentType)
                 if (body != null) {
@@ -580,19 +656,10 @@ class McpOAuthManager(private val context: Context) {
                 val list = headers.getOrPut(k) { mutableListOf() }
                 if (values != null) list.addAll(values)
             }
-            val text = readAll(
-                if (status >= 400) {
-                    try { conn.errorStream } catch (_: Exception) { null }
-                } else {
-                    try { conn.inputStream } catch (_: Exception) { null }
-                }
-            )
+            val text = readAll(if (status >= 400) conn.errorStream else conn.inputStream)
             conn.disconnect()
-            val result = HttpResult(status, headers, text)
             Log.d(TAG, "[$method $urlStr] -> $status")
-            Log.d(TAG, "headers: ${headers.entries.joinToString(", ") { (k, v) -> "$k=$v" }}")
-            if (text.isNotEmpty()) Log.d(TAG, "body: ${text.take(512)}")
-            result
+            HttpResult(status, headers, text)
         } catch (e: Exception) {
             Log.d(TAG, "[$method $urlStr] failed: ${e.message}")
             null
@@ -610,9 +677,7 @@ class McpOAuthManager(private val context: Context) {
                 }
                 sb.toString()
             }
-        } catch (_: Exception) {
-            ""
-        }
+        } catch (_: Exception) { "" }
     }
 
     private fun originOf(urlStr: String): String? {
@@ -621,16 +686,20 @@ class McpOAuthManager(private val context: Context) {
             val port = u.port
             val defaultPort = if (u.protocol.equals("https", true)) 443
                 else if (u.protocol.equals("http", true)) 80 else -1
-            val suffix = if (port != -1 && port != defaultPort) ":" + port.toString() else ""
-            u.protocol.lowercase() + "://" + u.host + suffix
-        } catch (_: Exception) {
-            null
-        }
+            val suffix = if (port != -1 && port != defaultPort) ":$port" else ""
+            "${u.protocol.lowercase()}://${u.host}$suffix"
+        } catch (_: Exception) { null }
     }
+
+    class McpOAuthRateLimitException(val retryAfterSeconds: Long) : Exception(
+        "Rate limited: retry after ${retryAfterSeconds}s"
+    )
 
     companion object {
         const val PENDING_INTENT_REQUEST_CODE = 10001
         const val MCP_OAUTH_SERVER_ID_KEY = "mcp_oauth_server_id"
+        const val MCP_OAUTH_STATE_KEY = "mcp_oauth_state"
+        const val MCP_OAUTH_CODE_VERIFIER_KEY = "mcp_oauth_code_verifier"
         private const val TAG = "McpOAuth"
     }
 }

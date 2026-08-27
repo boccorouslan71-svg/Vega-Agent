@@ -64,6 +64,7 @@ class McpClient(
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("Accept", "application/json, text/event-stream")
+            conn.setRequestProperty("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
             conn.connectTimeout = timeoutMs
             conn.readTimeout = timeoutMs
 
@@ -183,6 +184,7 @@ class McpClient(
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
             conn.connectTimeout = timeoutMs
             conn.readTimeout = timeoutMs
 
@@ -265,6 +267,7 @@ class McpClient(
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
             if (!sessionId.isNullOrEmpty()) {
                 conn.setRequestProperty("Mcp-Session-Id", sessionId)
             }
@@ -286,7 +289,7 @@ class McpClient(
 
     companion object {
         /** Current MCP protocol version supported by this client. */
-        const val MCP_PROTOCOL_VERSION = "2025-03-26"
+        const val MCP_PROTOCOL_VERSION = "2025-11-25"
     }
 }
 

@@ -1660,6 +1660,9 @@ class SettingsActivity : Activity() {
             appliedRevision = Theme.revision
             recreate()
         }
+        // Abort any pending loopback callback if the user leaves the OAuth flow
+        // and returns (e.g. switches app, presses home, etc.).
+        McpOAuthManager(this).abortPendingLoopback()
     }
 
     override fun onConfigurationChanged(configuration: android.content.res.Configuration) {
@@ -2292,6 +2295,8 @@ class SettingsActivity : Activity() {
         if (isEdit) oauthTokenEp.setText(editing.oauth.tokenEndpoint)
         val oauthScopes = field(advancedContainer, Fa.MCP_SCOPES, "openid profile", InputType.TYPE_CLASS_TEXT)
         if (isEdit) oauthScopes.setText(editing.oauth.scopes.joinToString(", "))
+        val oauthAllowedOrigin = field(advancedContainer, Fa.MCP_ALLOW_ORIGIN, Fa.MCP_OAUTH_RESOURCE_HINT, InputType.TYPE_TEXT_VARIATION_URI)
+        if (isEdit) oauthAllowedOrigin.setText(editing.oauth.allowedOrigin)
 
         oauthHeader.setOnClickListener {
             val show = advancedContainer.visibility != View.VISIBLE
@@ -2321,6 +2326,7 @@ class SettingsActivity : Activity() {
             val scopesStr = oauthScopes.text.toString().trimJava()
             editing.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
                 else scopesStr.split(",").map { it.trimJava() }.filter { it.isNotEmpty() }
+            editing.oauth.allowedOrigin = oauthAllowedOrigin.text.toString().trimJava()
 
             if (!isEdit) manager.addServer(editing) else manager.saveServers()
             sheet.dismiss()
@@ -2368,6 +2374,7 @@ class SettingsActivity : Activity() {
                 val scopesStr = oauthScopes.text.toString().trimJava()
                 editing.oauth.scopes = if (scopesStr.isEmpty()) listOf("openid", "profile")
                     else scopesStr.split(",").map { it.trimJava() }.filter { it.isNotEmpty() }
+                editing.oauth.allowedOrigin = oauthAllowedOrigin.text.toString().trimJava()
             }
 
             if (!isEdit) manager.addServer(editing) else manager.saveServers()
