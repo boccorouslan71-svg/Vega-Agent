@@ -119,7 +119,7 @@ class McpManager(private val context: Context) {
                     connectServer(server)
                 } catch (e: Exception) {
                     server.lastError = e.message?.take(100) ?: "Connection failed"
-                    if (BuildConfig.DEBUG) {
+                    if (false) {
                         android.util.Log.e("McpManager", "Connect failed: ${server.label}", e)
                     }
                 }
@@ -160,7 +160,7 @@ class McpManager(private val context: Context) {
 
         // Initialize
         client.initialize()
-        if (BuildConfig.DEBUG) {
+        if (false) {
             android.util.Log.d("McpManager", "Initialized: ${server.label}")
         }
 
@@ -178,7 +178,7 @@ class McpManager(private val context: Context) {
         server.lastError = ""
         clients[server.id] = client
 
-        if (BuildConfig.DEBUG) {
+        if (false) {
             android.util.Log.d(
                 "McpManager",
                 "Tools for ${server.label}: ${namedTools.joinToString { it.name }}"

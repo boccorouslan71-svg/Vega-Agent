@@ -163,7 +163,7 @@ out.write_text('\n'.join(files) + '\n', encoding='utf-8')
 PY
 # shellcheck disable=SC2046
 "$KOTLINC" \
-  -classpath "$ANDROID_JAR" \
+  -classpath "$ANDROID_JAR:$BUILD_DIR/out/appauth-0.11.1.jar:$BUILD_DIR/out/browser-1.3.0.jar:$BUILD_DIR/out/core-1.6.0.jar:$BUILD_DIR/out/customview-1.0.0.jar:$BUILD_DIR/out/annotation-1.2.0.jar" \
   -jvm-target 17 \
   -no-reflect \
   -nowarn \

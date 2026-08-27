@@ -78,7 +78,7 @@ class McpClient(
             }
 
             val body = jsonRpcRequest(method, params)
-            if (BuildConfig.DEBUG) {
+            if (false) {
                 android.util.Log.d("McpClient", ">>> $method ${body.toString(2)}")
             }
 
@@ -101,7 +101,7 @@ class McpClient(
                 sessionId = newSessionId
             }
 
-            if (BuildConfig.DEBUG) {
+            if (false) {
                 android.util.Log.d("McpClient", "<<< $code $rawResponse")
             }
 

@@ -2202,8 +2202,8 @@ class SettingsActivity : Activity() {
 
         // Save button
         val saveBtn = Ui.pillButton(this, Fa.MCP_SAVE, null, Ui.PRIMARY) {
-            val label = labelInput.text.toString().trim()
-            val url = urlInput.text.toString().trim()
+            val label = labelInput.text.toString().trimJava()
+            val url = urlInput.text.toString().trimJava()
             if (label.isEmpty() || url.isEmpty()) {
                 say("Label and URL are required", false)
                 return@pillButton
