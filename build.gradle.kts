@@ -33,7 +33,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.vepro.code"
+        applicationId = "com.vepro.code.mcp"
         // Android 6.0. The floor was 24 here while apksigner was already told
         // --min-sdk-version 23, so the APK was signed as Android-6-capable while
         // its dex was compiled for 24 — the manifest, the dexer and the signer

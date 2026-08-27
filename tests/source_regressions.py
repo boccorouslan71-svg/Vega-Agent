@@ -1052,9 +1052,9 @@ def test_app_is_branded_vega():
     # this contract existed to stop the three drifting apart. v1 is English-only
     # and the table is a single set of immutable vals, so there is exactly one
     # place the product name can be written and nothing left to drift.
-    named = re.findall(r'val APP_NAME: String get\(\) = "Vega Agent"', fa)
+    named = re.findall(r'val APP_NAME: String get\(\) = "Vega MCP"', fa)
     require(len(named) == 1,
-            "Fa.APP_NAME must be \"Vega Agent\" in BOTH languages, declared exactly "
+            "Fa.APP_NAME must be \"Vega MCP\" in BOTH languages, declared exactly "
             f"once as an unconditional getter; found {len(named)}. The product name is "
             "an identifier, not prose — a `if (farsi)` here would translate the brand.")
     require("HEADER_BRAND" not in fa,

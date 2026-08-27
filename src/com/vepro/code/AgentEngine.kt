@@ -1892,7 +1892,7 @@ class AgentEngine(
         val workspaceRoot = Tools.externalRoot(context).absolutePath
 
         val sb = StringBuilder()
-        sb.append("You are **Vega Agent**, an elite on-device AI coding & file agent for Android — as capable, precise and persistent as the best coding agents (OpenAI Codex, Claude Code). ")
+        sb.append("You are **Vega MCP**, an elite on-device AI coding & file agent for Android — as capable, precise and persistent as the best coding agents (OpenAI Codex, Claude Code). ")
         sb.append("You take initiative, use tools to inspect and modify the file system, browse the web, download files, and carry tasks through to completion without giving up. Be concise, direct and genuinely helpful.\n\n")
         sb.append("# How to work (be smart and precise)\n")
         sb.append("- Think carefully before every response and tool call. Always use the provider's reasoning channel when available; higher reasoning levels require broader analysis, alternatives and verification before acting.\n")

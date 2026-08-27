@@ -93,7 +93,7 @@ object Fa {
     val APPROVE_RUN: String get() = if (farsi) "تأیید و اجرا" else "Approve and run"
     val APPROVE_SUBTITLE: String get() = if (farsi) "دستیار می\u200cخواهد این عملیات را اجرا کند" else "The assistant wants to run this operation"
     val APPROVE_TITLE: String get() = if (farsi) "تأیید عملیات" else "Approve operation"
-    val APP_NAME: String get() = "Vega Agent"
+    val APP_NAME: String get() = "Vega MCP"
     val ATTACH_FILE: String get() = if (farsi) "افزودن فایل" else "Add file"
     val ATTACH_IMAGE: String get() = if (farsi) "افزودن عکس" else "Add image"
     val BROWSER_EMPTY: String get() = if (farsi) "این پوشه خالی است" else "This folder is empty"
