@@ -272,6 +272,8 @@ class McpOAuthManager(private val context: Context) {
         loopbackServer = McpLoopbackCallbackServer(
             expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, ""),
             onResult = { code, state, error ->
+                val actualRedirectUri = loopbackServer?.getRedirectUri()
+                    ?: McpLoopbackCallbackServer.LOOPBACK_URL
                 loopbackServer = null
                 if (error != null) {
                     activity.runOnUiThread {
@@ -285,7 +287,7 @@ class McpOAuthManager(private val context: Context) {
                     return@McpLoopbackCallbackServer
                 }
                 if (code != null) {
-                    exchangeCodeForToken(activity, server, callback, code, codeVerifier)
+                    exchangeCodeForToken(activity, server, callback, code, codeVerifier, actualRedirectUri)
                 }
             }
         )
@@ -327,7 +329,8 @@ class McpOAuthManager(private val context: Context) {
         server: McpServer,
         callback: OAuthCallback,
         code: String,
-        codeVerifier: String
+        codeVerifier: String,
+        redirectUri: String
     ) {
         val oauth = server.oauth
         val serviceConfig = AuthorizationServiceConfiguration(
@@ -336,7 +339,7 @@ class McpOAuthManager(private val context: Context) {
         )
         val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
             .setGrantType("authorization_code")
-            .setRedirectUri(Uri.parse(loopbackServer?.getRedirectUri() ?: McpLoopbackCallbackServer.LOOPBACK_URL))
+            .setRedirectUri(Uri.parse(redirectUri))
             .setAuthorizationCode(code)
             .setCodeVerifier(codeVerifier)
             .setScopes(*oauth.scopes.toTypedArray())
