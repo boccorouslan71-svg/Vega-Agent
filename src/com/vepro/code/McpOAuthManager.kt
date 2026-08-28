@@ -289,7 +289,8 @@ class McpOAuthManager(private val context: Context) {
                 }
             }
         )
-        if (!loopbackServer?.start() ?: false) {
+        val started = loopbackServer?.start() ?: false
+        if (!started) {
             activity.runOnUiThread { callback.onError("Could not start loopback server") }
             return
         }

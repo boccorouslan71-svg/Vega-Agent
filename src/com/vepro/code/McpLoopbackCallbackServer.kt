@@ -36,6 +36,7 @@ class McpLoopbackCallbackServer(
     companion object {
         const val LOOPBACK_PORT = 2083
         const val CALLBACK_PATH = "/mcp/oauth/callback"
+        const val LOOPBACK_URL = "http://127.0.0.1:$LOOPBACK_PORT$CALLBACK_PATH"
         private const val TAG = "McpLoopback"
 
         /** Try these ports in order; some OEMs bind 2083 at boot. */

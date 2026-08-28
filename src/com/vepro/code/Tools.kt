@@ -77,7 +77,7 @@ class Tools(context: Context) {
     companion object {
         /** Shared singleton instance accessible from any Activity. */
         @JvmStatic var instance: Tools? = null
-            private set
+            public set
     }
 
     /** Constant tool names, shared with Prefs and the system prompt. */
