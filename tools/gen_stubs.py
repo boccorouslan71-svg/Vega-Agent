@@ -619,6 +619,7 @@ c('android.text.Selection', [
 ])
 c('android.text.Html', [
     'public static final int FROM_HTML_MODE_LEGACY = 0',
+    'public static android.text.Spanned fromHtml(String source)',
     '@since24 public static android.text.Spanned fromHtml(String source, int flags)',
 ])
 c('android.text.TextPaint', [
