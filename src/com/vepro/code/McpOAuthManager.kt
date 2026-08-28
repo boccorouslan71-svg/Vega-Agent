@@ -430,6 +430,7 @@ class McpOAuthManager(private val context: Context) {
                     server.oauth.encryptedAccessToken = if (newAccess.isNotEmpty()) SecureStore.encrypt(newAccess) else ""
                     server.oauth.encryptedRefreshToken = if (newRefresh.isNotEmpty()) SecureStore.encrypt(newRefresh) else ""
                     server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
+                    persistOAuthTokens(server)
                     callback.onSuccess(newAccess, newRefresh, response.idToken)
                 } else {
                     callback.onError(ex?.message ?: "Token refresh failed")
