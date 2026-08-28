@@ -1050,5 +1050,10 @@ object MarkdownRenderer {
         String.format(Locale.US, "#%06X", color and 0xFFFFFF)
 
     @Suppress("DEPRECATION")
-    private fun toSpanned(html: String): Spanned = android.text.Html.fromHtml(html, 0)
+    private fun toSpanned(html: String): Spanned =
+        if (Build.VERSION.SDK_INT >= 24) {
+            android.text.Html.fromHtml(html, 0)
+        } else {
+            android.text.Html.fromHtml(html)
+        }
 }

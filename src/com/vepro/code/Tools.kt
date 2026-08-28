@@ -159,9 +159,12 @@ class Tools(context: Context) {
             ) {
                 return true
             }
-            val dataDir = ctx.dataDir
-            if (dataDir != null) {
-                val d = dataDir.canonicalPath
+            val d = if (Build.VERSION.SDK_INT >= 24) {
+                ctx.dataDir?.canonicalPath
+            } else {
+                ctx.filesDir.parentFile?.canonicalPath
+            }
+            if (d != null) {
                 if (p == d || p.startsWith("$d/")) {
                     return true
                 }

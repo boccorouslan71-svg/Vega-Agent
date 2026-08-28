@@ -1403,16 +1403,7 @@ EXTRA_SINCE = {
 # run and deliberately NOT fatal, so one unfixed file cannot block the offline
 # build for everything else. The list is meant to be empty; an entry that no
 # longer matches anything is reported too, so a waiver cannot outlive its bug.
-PENDING_UNGUARDED = {
-    ('MarkdownRenderer.kt', 'fromHtml'):
-        'Html.fromHtml(String, int) is API 24 — needs an SDK_INT >= 24 branch '
-        'with the deprecated one-arg Html.fromHtml(html) as the else.',
-    ('Tools.kt', 'dataDir'):
-        'Context.getDataDir() is API 24 — guard it, or use '
-        'filesDir.parentFile on 23. (The extra hits on the neighbouring lines '
-        'are the local `val dataDir` shadowing the tagged name — see '
-        '"Shadowing" in the module docstring.)',
-}
+PENDING_UNGUARDED = {}
 
 
 def harvest_levels():
