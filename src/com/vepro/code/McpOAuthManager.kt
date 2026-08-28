@@ -355,6 +355,8 @@ class McpOAuthManager(private val context: Context) {
                     server.oauth.encryptedRefreshToken = encryptedRefresh
                     server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
                     server.oauth.resourceUrl = builder.build().additionalParameters?.get("resource") ?: server.oauth.resourceUrl
+                    // Persist tokens immediately to prefs so connectAll() sees them
+                    persistOAuthTokens(server)
                     activity.runOnUiThread { callback.onSuccess(accessToken, refreshToken, response.idToken) }
                 } else {
                     val msg = ex?.message ?: "Token exchange failed"
@@ -602,6 +604,22 @@ class McpOAuthManager(private val context: Context) {
             to.encryptedClientSecret = from.encryptedClientSecret
             to.resourceUrl = from.resourceUrl
             if (from.scopes.isNotEmpty()) to.scopes = from.scopes
+            manager.saveServers()
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Persist OAuth tokens to prefs. Called after token exchange succeeds.
+     */
+    private fun persistOAuthTokens(server: McpServer) {
+        try {
+            val manager = McpManager(context)
+            manager.loadServers()
+            val stored = manager.getServer(server.id) ?: return
+            stored.oauth.encryptedAccessToken = server.oauth.encryptedAccessToken
+            stored.oauth.encryptedRefreshToken = server.oauth.encryptedRefreshToken
+            stored.oauth.tokenExpiry = server.oauth.tokenExpiry
+            stored.oauth.resourceUrl = server.oauth.resourceUrl
             manager.saveServers()
         } catch (_: Exception) {}
     }
