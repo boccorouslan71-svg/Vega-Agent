@@ -1661,8 +1661,10 @@ class SettingsActivity : Activity() {
             recreate()
         }
         // Abort any pending loopback callback if the user leaves the OAuth flow
-        // and returns (e.g. switches app, presses home, etc.).
-        McpOAuthManager(this).abortPendingLoopback()
+        // and returns (e.g. switches app, presses home, etc.). Cancels the flow
+        // when the callback was never received (mirrors mobile-agent's AppState
+        // handling); a no-op once the code was captured.
+        McpOAuthManager(this).cancelPendingLoopback()
     }
 
     override fun onConfigurationChanged(configuration: android.content.res.Configuration) {

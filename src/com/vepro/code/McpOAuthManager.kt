@@ -10,16 +10,13 @@ import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
-import net.openid.appauth.ClientAuthentication
-import net.openid.appauth.ClientSecretBasic
-import net.openid.appauth.ClientSecretPost
-import net.openid.appauth.TokenRequest
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -36,6 +33,8 @@ class McpOAuthManager(private val context: Context) {
 
     private val authService: AuthorizationService = AuthorizationService(context)
     private var loopbackServer: McpLoopbackCallbackServer? = null
+    private var pendingLoopbackCallback: OAuthCallback? = null
+    private var pendingLoopbackActivity: Activity? = null
 
     interface OAuthCallback {
         fun onSuccess(accessToken: String, refreshToken: String?, idToken: String?)
@@ -269,11 +268,15 @@ class McpOAuthManager(private val context: Context) {
     ) {
         activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_LOOPBACK_START) }
 
+        pendingLoopbackCallback = callback
+        pendingLoopbackActivity = activity
         loopbackServer = McpLoopbackCallbackServer(
             expectedState = Prefs(context).str(MCP_OAUTH_STATE_KEY, ""),
             onResult = { code, state, error ->
                 val actualRedirectUri = loopbackServer?.getRedirectUri()
                     ?: McpLoopbackCallbackServer.LOOPBACK_URL
+                pendingLoopbackCallback = null
+                pendingLoopbackActivity = null
                 loopbackServer = null
                 if (error != null) {
                     activity.runOnUiThread {
@@ -322,7 +325,10 @@ class McpOAuthManager(private val context: Context) {
     }
 
     /**
-     * Exchange the authorization code for tokens via AppAuth's performTokenRequest.
+     * Exchange the authorization code for tokens with a direct form-encoded
+     * POST to the token endpoint — the same procedure mobile-agent performs
+     * with `exchangeCodeAsync` (expo-auth-session). This avoids AppAuth's
+     * performTokenRequest entirely, which behaves differently on some devices.
      */
     private fun exchangeCodeForToken(
         activity: Activity,
@@ -333,43 +339,36 @@ class McpOAuthManager(private val context: Context) {
         redirectUri: String
     ) {
         val oauth = server.oauth
-        val serviceConfig = AuthorizationServiceConfiguration(
-            Uri.parse(oauth.authorizationEndpoint),
-            Uri.parse(oauth.tokenEndpoint)
+        val params = linkedMapOf(
+            "grant_type" to "authorization_code",
+            "code" to code,
+            "redirect_uri" to redirectUri,
+            "client_id" to oauth.clientId,
+            "code_verifier" to codeVerifier
         )
-        val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
-            .setGrantType("authorization_code")
-            .setRedirectUri(Uri.parse(redirectUri))
-            .setAuthorizationCode(code)
-            .setCodeVerifier(codeVerifier)
-            .setScopes(*oauth.scopes.toTypedArray())
-        if (oauth.resourceUrl.isNotEmpty()) {
-            builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
+        val basicAuth = applyExtraTokenParams(params, oauth)
+        val result = postTokenForm(oauth.tokenEndpoint, params, basicAuth)
+        if (result == null) {
+            activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_NETWORK_ERROR) }
+            return
         }
-
-        authService.performTokenRequest(builder.build(),
-            AuthorizationService.TokenResponseCallback { response, ex ->
-                if (response != null) {
-                    val accessToken = response.accessToken ?: ""
-                    val refreshToken = response.refreshToken ?: ""
-                    val encryptedAccess = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
-                    val encryptedRefresh = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
-                    server.oauth.encryptedAccessToken = encryptedAccess
-                    server.oauth.encryptedRefreshToken = encryptedRefresh
-                    server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
-                    server.oauth.resourceUrl = builder.build().additionalParameters?.get("resource") ?: server.oauth.resourceUrl
-                    // Persist tokens immediately to prefs so connectAll() sees them
-                    persistOAuthTokens(server)
-                    activity.runOnUiThread { callback.onSuccess(accessToken, refreshToken, response.idToken) }
-                } else {
-                    val msg = ex?.message ?: "Token exchange failed"
-                    if (msg.contains("429", ignoreCase = true) || msg.contains("rate limit", ignoreCase = true)) {
-                        activity.runOnUiThread { callback.onError(Fa.MCP_OAUTH_429_MESSAGE.format("30")) }
-                    } else {
-                        activity.runOnUiThread { callback.onError(msg) }
-                    }
-                }
-            })
+        if (result.status !in 200..299) {
+            activity.runOnUiThread { callback.onError(tokenErrorText(result)) }
+            return
+        }
+        val token = parseTokenResponse(result.body)
+        if (token == null) {
+            activity.runOnUiThread { callback.onError("Token exchange failed: invalid response") }
+            return
+        }
+        val accessToken = token.accessToken ?: ""
+        val refreshToken = token.refreshToken ?: ""
+        server.oauth.encryptedAccessToken = if (accessToken.isNotEmpty()) SecureStore.encrypt(accessToken) else ""
+        server.oauth.encryptedRefreshToken = if (refreshToken.isNotEmpty()) SecureStore.encrypt(refreshToken) else ""
+        server.oauth.tokenExpiry = token.expiresAt ?: 0L
+        // Persist tokens immediately to prefs so connectAll() sees them
+        persistOAuthTokens(server)
+        activity.runOnUiThread { callback.onSuccess(accessToken, refreshToken, token.idToken) }
     }
 
     fun handleAuthorizationResponse(
@@ -414,31 +413,33 @@ class McpOAuthManager(private val context: Context) {
             callback.onError("Refresh token is empty")
             return
         }
-        val serviceConfig = AuthorizationServiceConfiguration(
-            Uri.parse(oauth.authorizationEndpoint),
-            Uri.parse(oauth.tokenEndpoint)
+        val params = linkedMapOf(
+            "grant_type" to "refresh_token",
+            "refresh_token" to refreshToken,
+            "client_id" to oauth.clientId
         )
-        val builder = TokenRequest.Builder(serviceConfig, oauth.clientId)
-            .setGrantType("refresh_token")
-            .setRefreshToken(refreshToken)
-            .setScopes(*oauth.scopes.toTypedArray())
-        if (oauth.resourceUrl.isNotEmpty()) {
-            builder.setAdditionalParameters(mapOf("resource" to oauth.resourceUrl))
+        val basicAuth = applyExtraTokenParams(params, oauth)
+        val result = postTokenForm(oauth.tokenEndpoint, params, basicAuth)
+        if (result == null) {
+            callback.onError(Fa.MCP_OAUTH_NETWORK_ERROR)
+            return
         }
-        authService.performTokenRequest(builder.build(),
-            AuthorizationService.TokenResponseCallback { response, ex ->
-                if (response != null) {
-                    val newAccess = response.accessToken ?: ""
-                    val newRefresh = response.refreshToken ?: refreshToken
-                    server.oauth.encryptedAccessToken = if (newAccess.isNotEmpty()) SecureStore.encrypt(newAccess) else ""
-                    server.oauth.encryptedRefreshToken = if (newRefresh.isNotEmpty()) SecureStore.encrypt(newRefresh) else ""
-                    server.oauth.tokenExpiry = response.accessTokenExpirationTime ?: 0L
-                    persistOAuthTokens(server)
-                    callback.onSuccess(newAccess, newRefresh, response.idToken)
-                } else {
-                    callback.onError(ex?.message ?: "Token refresh failed")
-                }
-            })
+        if (result.status !in 200..299) {
+            callback.onError(tokenErrorText(result))
+            return
+        }
+        val token = parseTokenResponse(result.body)
+        if (token == null) {
+            callback.onError("Token refresh failed: invalid response")
+            return
+        }
+        val newAccess = token.accessToken ?: ""
+        val newRefresh = token.refreshToken ?: refreshToken
+        server.oauth.encryptedAccessToken = if (newAccess.isNotEmpty()) SecureStore.encrypt(newAccess) else ""
+        server.oauth.encryptedRefreshToken = if (newRefresh.isNotEmpty()) SecureStore.encrypt(newRefresh) else ""
+        server.oauth.tokenExpiry = token.expiresAt ?: 0L
+        persistOAuthTokens(server)
+        callback.onSuccess(newAccess, newRefresh, token.idToken)
     }
 
     fun getAccessToken(server: McpServer): String? {
@@ -456,10 +457,30 @@ class McpOAuthManager(private val context: Context) {
         server.oauth.tokenExpiry = 0L
     }
 
-    /** Abort any pending loopback callback (called from SettingsActivity.onResume). */
+    /** Abort any pending loopback callback without notifying (called from dispose). */
     fun abortPendingLoopback() {
+        pendingLoopbackCallback = null
+        pendingLoopbackActivity = null
         loopbackServer?.stop()
         loopbackServer = null
+    }
+
+    /**
+     * Cancel a pending loopback flow and report cancellation. Mirrors
+     * mobile-agent's AppState handling: if the user's browser returns to the
+     * app without the callback having been received, treat the flow as
+     * canceled (called from SettingsActivity.onResume).
+     */
+    fun cancelPendingLoopback() {
+        val cb = pendingLoopbackCallback
+        val act = pendingLoopbackActivity
+        pendingLoopbackCallback = null
+        pendingLoopbackActivity = null
+        loopbackServer?.stop()
+        loopbackServer = null
+        cb?.let {
+            act?.runOnUiThread { it.onCancel() }
+        }
     }
 
     fun dispose() {
@@ -732,6 +753,116 @@ class McpOAuthManager(private val context: Context) {
                 sb.toString()
             }
         } catch (_: Exception) { "" }
+    }
+
+    // =====================================================================
+    // Direct token-endpoint POST (mobile-agent / exchangeCodeAsync style).
+    // =====================================================================
+
+    private class TokenHttpResult(
+        val status: Int,
+        val body: String
+    )
+
+    /**
+     * Form-encoded POST to the token endpoint, exactly like the plain fetch
+     * mobile-agent's `exchangeCodeAsync` performs. Returns null when the
+     * connection itself fails (DNS, refused, cleartext/TLS, timeout — i.e.
+     * what AppAuth reports as NETWORK_ERROR). HTTP status + body are returned
+     * so the caller can surface the server's error_description.
+     */
+    private fun postTokenForm(
+        urlStr: String,
+        params: Map<String, String>,
+        basicClientAuth: String? = null
+    ): TokenHttpResult? {
+        return try {
+            val body = params.entries.joinToString("&") { (k, v) ->
+                "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
+            }
+            val bodyBytes = body.toByteArray(Charsets.UTF_8)
+            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 20000
+                readTimeout = 30000
+                doOutput = true
+                setFixedLengthStreamingMode(bodyBytes.size)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                if (basicClientAuth != null) {
+                    val cred = Base64.getEncoder().encodeToString(basicClientAuth.toByteArray(Charsets.UTF_8))
+                    setRequestProperty("Authorization", "Basic $cred")
+                }
+            }
+            conn.outputStream.use { it.write(bodyBytes) }
+            val status = conn.responseCode
+            val text = readAll(if (status >= 400) conn.errorStream else conn.inputStream)
+            conn.disconnect()
+            Log.d(TAG, "POST $urlStr -> $status")
+            TokenHttpResult(status, text)
+        } catch (e: Exception) {
+            Log.d(TAG, "POST $urlStr failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun applyExtraTokenParams(params: MutableMap<String, String>, oauth: OAuthConfig): String? {
+        if (oauth.resourceUrl.isNotEmpty()) {
+            params["resource"] = oauth.resourceUrl
+        }
+        val secret = runCatching { SecureStore.decrypt(oauth.encryptedClientSecret) }.getOrDefault("")
+        if (secret.isEmpty()) return null
+        return if (oauth.tokenEndpointAuthMethod == "client_secret_basic") {
+            "${oauth.clientId}:$secret"
+        } else {
+            params["client_secret"] = secret
+            null
+        }
+    }
+
+    private class TokenResponse(
+        val accessToken: String?,
+        val refreshToken: String?,
+        val idToken: String?,
+        val expiresAt: Long?
+    )
+
+    private fun parseTokenResponse(body: String): TokenResponse? {
+        return try {
+            val obj = JSONObject(body)
+            val access = obj.optString("access_token", "")
+            if (access.isEmpty()) return null
+            val expiresIn = obj.optLong("expires_in", 0L)
+            val expiresAt = if (expiresIn > 0L) System.currentTimeMillis() + expiresIn * 1000L else 0L
+            TokenResponse(
+                accessToken = access,
+                refreshToken = obj.optString("refresh_token", "").ifEmpty { null },
+                idToken = obj.optString("id_token", "").ifEmpty { null },
+                expiresAt = expiresAt
+            )
+        } catch (_: Exception) { null }
+    }
+
+    private fun tokenErrorText(result: TokenHttpResult): String {
+        if (result.status == 429) return Fa.MCP_OAUTH_429_MESSAGE.format("30")
+        val oauthErr = try {
+            val obj = JSONObject(result.body)
+            val err = obj.optString("error", "")
+            val desc = obj.optString("error_description", "")
+            when {
+                err.isEmpty() && desc.isEmpty() -> null
+                desc.isEmpty() -> err
+                err.isEmpty() -> desc
+                else -> "$err: $desc"
+            }
+        } catch (_: Exception) { null }
+        if (oauthErr != null) return oauthErr
+        val trimmed = result.body.trimJava()
+        return when {
+            trimmed.isEmpty() -> "Token endpoint error (HTTP ${result.status})"
+            trimmed.length <= 120 -> trimmed
+            else -> trimmed.take(120) + "…"
+        }
     }
 
     private fun originOf(urlStr: String): String? {

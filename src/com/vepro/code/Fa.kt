@@ -490,5 +490,6 @@ object Fa {
     val MCP_OAUTH_ORIGIN_VALIDATION = if (farsi) "Validation d'origine AS" else "AS origin validation"
     val MCP_OAUTH_RESOURCE_HINT = if (farsi) "https://mcp.example.com" else "https://mcp.example.com"
     val MCP_OAUTH_429_MESSAGE = if (farsi) "Nouvelles inscriptions OAuth temporairement désactivées; réessayez dans %s secondes" else "New OAuth client registrations have been temporarily disabled; retry in %s seconds"
+    val MCP_OAUTH_NETWORK_ERROR = if (farsi) "Network error" else "Network error"
     val MCP_ALLOW_ORIGIN = if (farsi) "Origine autorisée (override)" else "Allowed origin (override)"
 }
