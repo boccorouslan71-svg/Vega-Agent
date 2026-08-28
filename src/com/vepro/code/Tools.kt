@@ -74,12 +74,6 @@ class Tools(context: Context) {
     /** Expose the MCP manager for SettingsActivity and AgentEngine. */
     fun mcpManager(): McpManager = mcpManager
 
-    companion object {
-        /** Shared singleton instance accessible from any Activity. */
-        @JvmStatic var instance: Tools? = null
-            public set
-    }
-
     /** Constant tool names, shared with Prefs and the system prompt. */
     object ToolNames {
         const val DELETE = "delete_path"
@@ -2070,6 +2064,9 @@ class Tools(context: Context) {
     }
 
     companion object {
+        /** Shared singleton instance accessible from any Activity. */
+        @JvmStatic var instance: Tools? = null
+            public set
 
         /**
          * Build a JSON tool definition in the standard format:
