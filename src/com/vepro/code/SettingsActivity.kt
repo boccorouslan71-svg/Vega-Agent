@@ -2185,7 +2185,7 @@ class SettingsActivity : Activity() {
                     Thread {
                         try {
                             manager.connectAll()
-                            Tools(this@SettingsActivity).reloadMcpServers()
+                            Tools.instance?.reloadMcpServers()
                         } catch (_: Exception) {}
                         runOnUiThread { say(Fa.MCP_AUTHORIZED, true) }
                     }.start()
@@ -3012,7 +3012,7 @@ class SettingsActivity : Activity() {
                                     Thread {
                                         try {
                                             mcpManager.connectAll()
-                                            Tools(this@SettingsActivity).reloadMcpServers()
+                                            Tools.instance?.reloadMcpServers()
                                         } catch (_: Exception) {}
                                         runOnUiThread { say(Fa.MCP_AUTHORIZED, true) }
                                     }.start()

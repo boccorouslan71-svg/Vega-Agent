@@ -58,8 +58,8 @@ class Tools(context: Context) {
     private fun hasBeenRead(file: File): Boolean {
         return try {
             READ_PATHS.contains(file.canonicalPath)
-        } catch (e: Exception) {
-            READ_PATHS.contains(file.absolutePath)
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -73,6 +73,12 @@ class Tools(context: Context) {
 
     /** Expose the MCP manager for SettingsActivity and AgentEngine. */
     fun mcpManager(): McpManager = mcpManager
+
+    companion object {
+        /** Shared singleton instance accessible from any Activity. */
+        @JvmStatic var instance: Tools? = null
+            private set
+    }
 
     /** Constant tool names, shared with Prefs and the system prompt. */
     object ToolNames {

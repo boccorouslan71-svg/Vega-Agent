@@ -20,7 +20,7 @@ class AgentEngine(
 ) {
 
     private val context: Context = context.applicationContext
-    private val tools = Tools(context)
+    private val tools = Tools(context).also { Tools.instance = it }
     private val llm = LlmClient(prefs)
     private val memory = Memory(context)
 
