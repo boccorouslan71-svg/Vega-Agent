@@ -50,7 +50,7 @@ class Tools(context: Context) {
     private fun noteRead(file: File) {
         try {
             READ_PATHS.add(file.canonicalPath)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             READ_PATHS.add(file.absolutePath)
         }
     }
@@ -58,8 +58,8 @@ class Tools(context: Context) {
     private fun hasBeenRead(file: File): Boolean {
         return try {
             READ_PATHS.contains(file.canonicalPath)
-        } catch (_: Exception) {
-            false
+        } catch (e: Exception) {
+            READ_PATHS.contains(file.absolutePath)
         }
     }
 
@@ -172,7 +172,7 @@ class Tools(context: Context) {
                     return true
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
         }
         return false
     }
@@ -187,7 +187,7 @@ class Tools(context: Context) {
             if (key.trimJava().length >= 8 && text.contains(key.trimJava())) {
                 return text.replace(key.trimJava(), "[REDACTED_API_KEY]")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
         }
         return text
     }
@@ -610,7 +610,7 @@ class Tools(context: Context) {
                             formatted.optString("output", result.toString())
                         } catch (e: McpException) {
                             "ERROR: MCP tool '$name' failed: ${e.message}"
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
                             "ERROR: MCP tool '$name' failed: ${e.javaClass.simpleName}: ${e.message}"
                         }
                     } else {
@@ -620,7 +620,7 @@ class Tools(context: Context) {
             }
         } catch (cancelled: CancellationToken.CancelledException) {
             "CANCELLED: user stopped this tool"
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             "ERROR: " + e.javaClass.simpleName + ": " + e.message
         }
     }
@@ -667,7 +667,7 @@ class Tools(context: Context) {
                 if (decoded != url0 && decoded.startsWith("http") && !decoded.contains(" ")) {
                     candidates.add(decoded)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
             }
             if (url0.contains("%20")) {
                 candidates.add(url0.replace("%20", "_"))
@@ -733,7 +733,7 @@ class Tools(context: Context) {
             return "ERROR: cannot resolve host (no internet?): " + e.message
         } catch (e: SocketTimeoutException) {
             return "ERROR: connection timed out"
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             if (token.isCancelled) {
                 return "CANCELLED: user stopped the download"
             }
@@ -797,7 +797,7 @@ class Tools(context: Context) {
             val code: Int
             try {
                 code = conn.responseCode
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 watch.close()
                 try {
                     conn.disconnect()
@@ -860,7 +860,7 @@ class Tools(context: Context) {
             ref = try {
                 val u = URL(urlForReferer)
                 u.protocol + "://" + u.host + "/"
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 ""
             }
         }
@@ -872,7 +872,7 @@ class Tools(context: Context) {
             if (!cookie.isNullOrEmpty()) {
                 conn.setRequestProperty("Cookie", cookie)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
         }
         if (resumeFrom > 0) {
             conn.setRequestProperty("Range", "bytes=$resumeFrom-")
@@ -1021,7 +1021,7 @@ class Tools(context: Context) {
             val origin = try {
                 val u = URL(fileUrl)
                 u.protocol + "://" + u.host + "/"
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 fileUrl
             }
             HumanFetch.fetch(origin, 20000, token)
@@ -1258,7 +1258,7 @@ class Tools(context: Context) {
                 }
                 control < read * 0.1
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             false
         }
     }
@@ -1706,7 +1706,7 @@ class Tools(context: Context) {
             }
             // Let the tool wrapper report this as CANCELLED, not as a failure.
             throw cancelled
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             try {
                 temp.delete()
             } catch (ignored: Exception) {
@@ -1790,7 +1790,7 @@ class Tools(context: Context) {
                                 ).trimJava()
                         )
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                 }
             }
         }
@@ -1894,7 +1894,7 @@ class Tools(context: Context) {
                 }
                 sb.toString()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             "ERROR: not a valid archive: " + e.message
         }
     }
@@ -1926,7 +1926,7 @@ class Tools(context: Context) {
                         Util.truncate(String(bytes, Charsets.UTF_8), maxBytes)
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             "ERROR: " + e.message
         }
     }
@@ -2064,7 +2064,7 @@ class Tools(context: Context) {
                 "PDF: " + rel(target) + " (" + Util.humanSize(target.length()) + ")\n" +
                     Util.truncate(text, maxBytes)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             "ERROR: read_pdf failed: " + e.message
         }
     }
@@ -2485,7 +2485,7 @@ class Tools(context: Context) {
                 if (extended != null) {
                     try {
                         name = URLDecoder.decode(extended.groupValues[1].trimJava(), "UTF-8")
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
                     }
                 }
                 if (name.isEmpty()) {
@@ -2503,7 +2503,7 @@ class Tools(context: Context) {
                     if (last.isNotEmpty()) {
                         name = URLDecoder.decode(last, "UTF-8")
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                 }
             }
             if (name.isEmpty()) {
@@ -3060,7 +3060,7 @@ class Tools(context: Context) {
                 if (out.size() > 0) {
                     return String(out.toByteArray(), StandardCharsets.ISO_8859_1)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
             } finally {
                 // Frees the native zlib buffer. Previously skipped on every
                 // DataFormatException, so a PDF full of bad streams leaked one
