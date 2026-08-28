@@ -810,7 +810,7 @@ class McpOAuthManager(private val context: Context) {
         if (oauth.resourceUrl.isNotEmpty()) {
             params["resource"] = oauth.resourceUrl
         }
-        val secret = runCatching { SecureStore.decrypt(oauth.encryptedClientSecret) }.getOrDefault("")
+        val secret = runCatching { SecureStore.decrypt(oauth.encryptedClientSecret) }.getOrNull() ?: ""
         if (secret.isEmpty()) return null
         return if (oauth.tokenEndpointAuthMethod == "client_secret_basic") {
             "${oauth.clientId}:$secret"
